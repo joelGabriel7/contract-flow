@@ -23,7 +23,7 @@ class User(UserBase, TimestampModel, table=True):
     reset_password_token_expires: Optional[datetime] = Field(default=None)
 
     # Relationships
-    orgarnizations: List["OrganizationUser"] = Relationship(back_populates="user")
+    organizations: List["OrganizationUser"] = Relationship(back_populates="user")
 
 
     @property

@@ -9,7 +9,7 @@ class UserCreate(SQLModel):
     password: str
     full_name: Optional[str] = None
     account_type: AccountType
-    organization_name: Optional[str] = None
+    organizations: Optional[str] = None
 
 class UserUpdate(SQLModel):
     full_name: Optional[str] = None
@@ -21,5 +21,6 @@ class UserRead(SQLModel):
     email: str
     full_name: Optional[str]
     account_type: AccountType
-    is_verified: bool
+    is_verify: bool
+    is_active: bool
     created_at: datetime

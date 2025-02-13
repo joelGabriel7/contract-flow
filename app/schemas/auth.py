@@ -1,6 +1,6 @@
 from typing import Optional
 from sqlmodel import SQLModel
-from .user import UserRead
+from .users import UserRead
 
 class TokenResponse(SQLModel):
     access_token: str

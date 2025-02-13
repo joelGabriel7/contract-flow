@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel
 from .core.database import engine
+from .api.auth import router as auth_router
 
 app = FastAPI(
     title="ContractFlow API",
@@ -29,6 +30,7 @@ async def on_startup():
 async def health_check():
     return {"status": "ok", "message": "ContractFlow API is running"}
 
+app.include_router(auth_router, prefix='/api/auth', tags=['Authentication'])
 
 if __name__ == "__main__":
     import uvicorn

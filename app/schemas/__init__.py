@@ -1,4 +1,4 @@
-from .user import UserCreate, UserUpdate, UserRead
+from .users import UserCreate, UserUpdate, UserRead
 from .auth import TokenResponse, LoginRequest, VerifyEmailRequest, RegisterResponse
 from .organization import (
     OrganizationCreate, OrganizationUpdate, OrganizationRead,
