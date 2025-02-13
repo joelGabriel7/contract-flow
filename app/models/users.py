@@ -4,16 +4,15 @@ from  uuid import UUID, uuid4
 from sqlmodel import SQLModel, Field, Relationship
 from .base import TimestampModel
 from .types import AccountType
-from .organization import Organization, OrganizationUser
 
-class UseBase(SQLModel):
+class UserBase(SQLModel):
     email: str = Field(unique=True, index=True)
     full_name: Optional[str] = None
     account_type: AccountType = Field(default=AccountType.PERSONAL)
 
 
 
-class User(UseBase, TimestampModel, table=True):
+class User(UserBase, TimestampModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     password_hash: str = Field(min_length=4)
     is_active: bool = Field(default=True)

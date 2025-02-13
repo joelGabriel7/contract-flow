@@ -4,6 +4,8 @@ __pycache__/
 .pytest_cache/
 .coverage
 
+alembic/versions/*
+alembic/__pycache__/*
 
 *.py[cod]
 *$py.class

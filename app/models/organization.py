@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 from sqlmodel import SQLModel, Field, Relationship
 from .base import TimestampModel
 from .types import OrganizationRole
-from .users import User
+
 
 class OrganizationBase(SQLModel):
     name: str = Field(index=True)
