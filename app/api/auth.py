@@ -108,27 +108,51 @@ async def verify_email(
 
     if not user.verification_code or not user.verification_code_expires:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No verification code found"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="No verification code found"
         )
 
     if datetime.utcnow() > user.verification_code_expires:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Verification code has expired"
+            detail="Verification code has expired",
         )
 
     if user.verification_code != verify_data.code:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid verification code"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code"
         )
 
-    user.is_verify = True   
+    user.is_verify = True
     user.verification_code = None
     user.verification_code_expires = None
-    
+
     session.add(user)
     session.commit()
 
-    return {"message": "Email verified successfully"} 
+    return {"message": "Email verified successfully"}
+
+
+@router.post("/login", response_model=TokenResponse)
+async def login(login_data: LoginRequest, session: Session = Depends(get_session)):
+    user = session.exec(select(User).where(User.email == login_data.email)).first()
+
+    if not user or verify_password(login_data.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Incorrect email or password",
+        )
+    if not user.is_verify:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please verify your email before logging in",
+        )
+
+    access_token = create_access_token({"sub": str(user.id)})
+    refresh_token = create_refresh_token({"sub": str(user.id)})
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="bearer",
+        user=user,
+    )
