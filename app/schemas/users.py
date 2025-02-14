@@ -9,7 +9,7 @@ class OrganizationInfo(SQLModel):
     name: str
     role: OrganizationRole
     total_members: int
-
+\
 
 class UserCreate(SQLModel):
     email: str
@@ -21,7 +21,8 @@ class UserCreate(SQLModel):
 class UserUpdate(SQLModel):
     full_name: Optional[str] = None
     email: Optional[str] = None
-    password: Optional[str] = None
+    current_password: Optional[str] = None
+    new_password: Optional[str] = None
 
 class UserRead(SQLModel):
     id: UUID
