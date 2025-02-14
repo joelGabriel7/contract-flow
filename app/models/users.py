@@ -16,7 +16,7 @@ class User(UserBase, TimestampModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     password_hash: str = Field(min_length=4)
     is_active: bool = Field(default=True)
-    is_verify: bool = Field(default=False)
+    is_verified: bool = Field(default=False)
     verification_code: Optional[str] = Field(default=None, unique=True)
     verification_code_expires: Optional[datetime] = Field(default=None, unique=True)
     reset_password_token: Optional[str] = Field(default=None)

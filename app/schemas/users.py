@@ -21,6 +21,6 @@ class UserRead(SQLModel):
     email: str
     full_name: Optional[str]
     account_type: AccountType
-    is_verify: bool
+    is_verified: bool
     is_active: bool
     created_at: datetime

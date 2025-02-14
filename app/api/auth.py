@@ -11,6 +11,7 @@ from ..schemas.auth import (
     RegisterResponse,
     VerifyEmailRequest,
     LoginRequest,
+    ResetPassword,
 )
 
 from ..schemas.users import UserCreate
@@ -101,7 +102,7 @@ async def verify_email(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found, please sign up",
         )
-    if user.is_verify:
+    if user.is_verified:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email already verified"
         )
@@ -122,7 +123,7 @@ async def verify_email(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code"
         )
 
-    user.is_verify = True
+    user.is_verified = True
     user.verification_code = None
     user.verification_code_expires = None
 
@@ -136,12 +137,12 @@ async def verify_email(
 async def login(login_data: LoginRequest, session: Session = Depends(get_session)):
     user = session.exec(select(User).where(User.email == login_data.email)).first()
 
-    if not user or verify_password(login_data.password, user.password_hash):
+    if not user or not verify_password(login_data.password, user.password_hash):
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
-    if not user.is_verify:
+    if not user.is_verified:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Please verify your email before logging in",
@@ -156,3 +157,96 @@ async def login(login_data: LoginRequest, session: Session = Depends(get_session
         token_type="bearer",
         user=user,
     )
+
+
+@router.post("/resend-verification")
+async def resend_verification(
+    background_task: BackgroundTasks,
+    email: str,
+    session: Session = Depends(get_session),
+):
+    user = session.exec(select(User).where(User.email == email)).first()
+    if not user:
+        print("Entro here")
+        return {
+            "message": "If the email exits and is not verified, you will receive a new code"
+        }
+
+    verification_code = email_service.generate_verification_code()
+    expires = datetime.utcnow() + timedelta(
+        hours=settings.VERIFICATION_CODE_EXPIRE_HOUR
+    )
+
+    user.verification_code = verification_code
+    user.verification_code_expires = expires
+
+    background_task.add_task(
+        email_service.send_verification_email, email, verification_code
+    )
+    session.commit()
+    return {
+        "message": "If the email exists and is not verified, you will receive a new code"
+    }
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    background_task: BackgroundTasks,
+    email: str,
+    session: Session = Depends(get_session),
+):
+    user = session.exec(select(User).where(User.email == email)).first()
+    if not user:
+        return {"message": "If account exists, you'll receive reset code"}
+
+    reset_code = email_service.generate_verification_code()
+    expires = datetime.utcnow() + timedelta(
+        hours=settings.VERIFICATION_CODE_EXPIRE_HOUR
+    )
+
+    user.reset_password_token = reset_code
+    user.reset_password_token_expires = expires
+
+    background_task.add_task(email_service.send_reset_password_email, email, reset_code)
+    session.commit()
+
+    return {"message": "You'll receive a reset code"}
+
+
+@router.post("/reset-password")
+async def reset_password(
+    reset_body: ResetPassword, session: Session = Depends(get_session)
+):
+    user = session.exec(select(User).where(User.email == reset_body.email)).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    if not user.reset_password_token or not user.reset_password_token_expires:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Token"
+        )
+    if (
+        datetime.utcnow() > user.reset_password_token_expires
+        or user.reset_password_token != reset_body.code
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Expire Token"
+        )
+    if reset_body.new_password != reset_body.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords must to match"
+        )
+    try:
+        user.password_hash = get_password_hash(reset_body.new_password)
+        user.reset_password_token = None
+        user.reset_password_token_expires = None
+
+        session.commit()
+        return {"message": "Password updated succesfully"}
+
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+        )

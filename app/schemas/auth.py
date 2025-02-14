@@ -19,3 +19,9 @@ class VerifyEmailRequest(SQLModel):
 class RegisterResponse(SQLModel):
     message: str
     user: UserRead
+
+class ResetPassword(SQLModel):
+    email:str
+    code: str
+    new_password: str
+    confirm_password: str

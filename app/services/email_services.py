@@ -43,6 +43,18 @@ class EmailService:
             </body>
         </html>
         """
+    def _get_reset_password_template(self, code: str) -> str:
+        return f"""
+        <html>
+            <body>
+                <h2>Reset Your Password</h2>
+                <p>Your password reset code is:</p>
+                <h1 style="color: #4A90E2;">{code}</h1>
+                <p>This code will expire in 1 hour.</p>
+                <p>If you didn't request this, please ignore this email.</p>
+        </body>
+        </html>
+        """
 
     @staticmethod
     def generate_verification_code() -> str:
@@ -53,6 +65,13 @@ class EmailService:
         self._send_email(
             to_email=to_email,
             subject="Verifica tu cuenta de ContractFlow",
+            html_content=html_content
+        )
+    def send_reset_password_email(self, to_email: str, code: str) -> None:
+        html_content = self._get_reset_password_template(code)
+        self._send_email(
+            to_email=to_email,
+            subject="Reset Your ContractFlow Password",
             html_content=html_content
         )
 
