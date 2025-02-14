@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
-from ..core.security import get_current_user
+from fastapi import APIRouter, Depends, HTTPException,Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from ..core.security import get_current_user, redis_service
 from ..models.users import User
 from ..schemas.users import UserRead, UserUpdate
 from ..core.database import get_session, Session
@@ -8,7 +9,7 @@ from sqlmodel import select
 
 
 router = APIRouter()
-
+security = HTTPBearer()
 
 @router.get("/me", response_model=UserRead)
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
@@ -55,7 +56,7 @@ async def update_profile(
 
         for field, value in update_data.items():
             setattr(current_user, field, value)
-            
+
         # Refresh organization data if business user
         if not current_user.is_personal:
             session.refresh(current_user.current_organization)
@@ -66,3 +67,14 @@ async def update_profile(
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post('/logout')
+async def logout(
+    credentials: HTTPAuthorizationCredentials = Security(security),
+    current_user: User = Depends(get_current_user)
+):
+
+    print(f"Logging out token: {credentials.credentials}")
+    redis_service.add_to_blacklist(credentials.credentials, 1800)
+    return{"message": "Logged out succesfully"}

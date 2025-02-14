@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     POSTGRES_DB:str
     PGADMIN_DEFAULT_EMAIL:str
     PGADMIN_DEFAULT_PASSWORD:str
+    REDIS_HOST: str
+    REDIS_PORT: str
     
     SECRET_KEY: str
     ALGORITHM: str
