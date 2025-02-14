@@ -16,6 +16,9 @@ class VerifyEmailRequest(SQLModel):
     email: str
     code: str
 
+class ResentVerification(SQLModel):
+    email: str
+    
 class RegisterResponse(SQLModel):
     message: str
     user: UserRead

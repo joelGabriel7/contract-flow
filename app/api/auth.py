@@ -12,6 +12,7 @@ from ..schemas.auth import (
     VerifyEmailRequest,
     LoginRequest,
     ResetPassword,
+    ResentVerification
 )
 
 from ..schemas.users import UserCreate
@@ -162,12 +163,11 @@ async def login(login_data: LoginRequest, session: Session = Depends(get_session
 @router.post("/resend-verification")
 async def resend_verification(
     background_task: BackgroundTasks,
-    email: str,
+    email_verification: ResentVerification,
     session: Session = Depends(get_session),
 ):
-    user = session.exec(select(User).where(User.email == email)).first()
+    user = session.exec(select(User).where(User.email == email_verification.email)).first()
     if not user:
-        print("Entro here")
         return {
             "message": "If the email exits and is not verified, you will receive a new code"
         }
@@ -181,23 +181,23 @@ async def resend_verification(
     user.verification_code_expires = expires
 
     background_task.add_task(
-        email_service.send_verification_email, email, verification_code
+        email_service.send_verification_email, email_verification.email, verification_code
     )
     session.commit()
     return {
-        "message": "If the email exists and is not verified, you will receive a new code"
+        "message": "You will receive a new code"
     }
 
 
 @router.post("/forgot-password")
 async def forgot_password(
     background_task: BackgroundTasks,
-    email: str,
+    email_verification: ResentVerification,
     session: Session = Depends(get_session),
 ):
-    user = session.exec(select(User).where(User.email == email)).first()
+    user = session.exec(select(User).where(User.email == email_verification.email)).first()
     if not user:
-        return {"message": "If account exists, you'll receive reset code"}
+        return {"message": "Not found account with that email"}
 
     reset_code = email_service.generate_verification_code()
     expires = datetime.utcnow() + timedelta(
@@ -207,7 +207,7 @@ async def forgot_password(
     user.reset_password_token = reset_code
     user.reset_password_token_expires = expires
 
-    background_task.add_task(email_service.send_reset_password_email, email, reset_code)
+    background_task.add_task(email_service.send_reset_password_email, email_verification.email, reset_code)
     session.commit()
 
     return {"message": "You'll receive a reset code"}
