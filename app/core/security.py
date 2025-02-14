@@ -41,10 +41,7 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Security(security),
     session: Session = Depends(get_session)
 ) -> User:
-
-    print(f"Checking token: {credentials.credentials}")
     if redis_service.is_blacklisted(credentials.credentials):
-        print("Token is blacklisted!")
         raise HTTPException(status_code=401, detail="Token has been revoked")
 
     try:
