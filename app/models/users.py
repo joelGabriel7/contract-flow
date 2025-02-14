@@ -32,4 +32,4 @@ class User(UserBase, TimestampModel, table=True):
 
     @property
     def current_organization(self) -> Optional["Organization"]:
-        return self.orgarnizations[0].organization if self.orgarnizations else None
+        return self.organizations[0].organization if self.organizations else None

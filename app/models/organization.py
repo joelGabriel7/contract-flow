@@ -11,8 +11,21 @@ class OrganizationBase(SQLModel):
 
 class Organization(OrganizationBase, TimestampModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    # Relationships
     members: List["OrganizationUser"] = Relationship(back_populates="organization")
+
+    def get_user_role(self, user_id:UUID):
+        for member in self.members:
+            if member.user_id == user_id:
+                return member.role
+        return None
+
+    @property
+    def total_members(self) -> int: 
+        return len(self.members) 
+
+    @property
+    def admins(self) -> List["User"]:
+        return [m.user for m in self.members if m.role == OrganizationRole.ADMIN]        
 
 class OrganizationUser(SQLModel, table=True):
     organization_id: UUID = Field(

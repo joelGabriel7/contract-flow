@@ -2,7 +2,14 @@ from typing import Optional
 from datetime import datetime
 from uuid import UUID
 from sqlmodel import SQLModel
-from ..models.types import AccountType
+from ..models.types import AccountType,OrganizationRole
+
+class OrganizationInfo(SQLModel):
+    id: UUID
+    name: str
+    role: OrganizationRole
+    total_members: int
+
 
 class UserCreate(SQLModel):
     email: str
@@ -21,6 +28,7 @@ class UserRead(SQLModel):
     email: str
     full_name: Optional[str]
     account_type: AccountType
+    organization: Optional[OrganizationInfo] = None
     is_verified: bool
     is_active: bool
     created_at: datetime
