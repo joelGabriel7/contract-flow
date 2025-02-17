@@ -3,6 +3,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import secrets
 from ..core.config import get_settings
+from ..models.organization import OrganizationRole
+from typing import Optional
 
 settings = get_settings()
 
@@ -43,7 +45,7 @@ class EmailService:
             </body>
         </html>
         """
-    def _get_reset_password_template(self, code: str) -> str:
+    def _get_reset_password_template(self, code: str) -> str:   
         return f"""
         <html>
             <body>
@@ -55,6 +57,71 @@ class EmailService:
         </body>
         </html>
         """
+
+    def send_invitation_email(
+        self,
+        to_email: str,
+        organization_name: str,
+        inviter_name: str,
+        invitation_token: str,
+        role: OrganizationRole,
+        custom_message: Optional[str] = None
+    ) -> None:
+        html_content = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <h2 style="color: #2C5282;">Invitación a {organization_name}</h2>
+                    
+                    <p>Hola,</p>
+                    
+                    <p>{inviter_name} te ha invitado a unirte a <strong>{organization_name}</strong> como <strong>{role.value}</strong>.</p>
+                    
+                    {f'<p style="background-color: #F7FAFC; padding: 15px; border-radius: 5px;">Mensaje del invitador:<br/>{custom_message}</p>' if custom_message else ''}
+                    
+                    <div style="background-color: #EBF8FF; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>¿Cómo aceptar la invitación?</strong></p>
+                        <ol>
+                            <li>Inicia sesión en ContractFlow (<a href="{'http://localhost:8000/api/auth/login'}">ir al login</a>)</li>
+                            <li>Ve a la sección "Invitaciones Pendientes" (<a href="{'http://localhost:8000/api/auth/login'}/invitations">ir a invitaciones</a>)</li>
+                            <li>Ingresa el siguiente código cuando se te solicite:</li>
+                        </ol>
+                        
+                        <div style="background: white; padding: 15px; text-align: center; border-radius: 5px; margin: 15px 0;">
+                            <code style="font-size: 24px; color: #4A90E2; letter-spacing: 2px;">{invitation_token}</code>
+                        </div>
+                    </div>
+                    
+                    <p><strong>Información importante:</strong></p>
+                    <ul style="padding-left: 20px;">
+                        <li>Esta invitación expirará en 7 días</li>
+                        <li>El código solo puede usarse una vez</li>
+                        <li>Como {role.value}, podrás {self._get_role_description(role)}</li>
+                    </ul>
+                    
+                    <p style="color: #666; font-size: 0.9em; margin-top: 30px;">
+                        Si no esperabas esta invitación, puedes ignorar este correo.
+                        Para más información, visita nuestra pagina ContractFlow.com
+                    </p>
+                </div>
+            </body>
+        </html>
+        """
+        
+        self._send_email(
+            to_email=to_email,
+            subject=f"Invitación para unirte a {organization_name} en ContractFlow",
+            html_content=html_content
+        )
+
+    def _get_role_description(self, role: OrganizationRole) -> str:
+        """Retorna una descripción de las capacidades del rol."""
+        descriptions = {
+            OrganizationRole.ADMIN: "gestionar miembros, contratos y configuraciones de la organización",
+            OrganizationRole.EDITOR: "crear y editar contratos, ver miembros del equipo",
+            OrganizationRole.VIEWER: "ver contratos y miembros del equipo"
+        }
+        return descriptions.get(role, "acceder a funcionalidades básicas")
 
     @staticmethod
     def generate_verification_code() -> str:
