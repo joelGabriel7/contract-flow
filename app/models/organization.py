@@ -12,6 +12,7 @@ class OrganizationBase(SQLModel):
 class Organization(OrganizationBase, TimestampModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     members: List["OrganizationUser"] = Relationship(back_populates="organization")
+    invitations: List['Invitation'] = Relationship(back_populates="organization")
 
     def get_user_role(self, user_id:UUID):
         for member in self.members:
