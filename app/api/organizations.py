@@ -5,7 +5,7 @@ from typing import List
 
 from ..core.permission import require_permission, Permission
 from ..core.security import get_current_user, get_session
-from ..schemas.organization import AdminDashboardResponse
+from ..schemas.organization import AdminDashboardResponse, OrganizationRead, DashboardMemberInfo,DashboardMetrics
 from ..schemas.invitations import InvitationResponse, InvitationCreate, InvitationAccept
 from ..models.users import User
 from ..models.invitations import Invitation
@@ -19,30 +19,62 @@ from datetime import datetime, timedelta
 
 router = APIRouter()
 
-# @router.get("/{org_id}/dashboard", response_model=AdminDashboardResponse)
-# @require_permission(Permission.EDIT_ORGANIZATION)
-# async def admin_dashboard(
-#     org_id: UUID,
-#     current_user: User = Depends(get_current_user),
-#     session: Session = Depends(get_session)
-# ):
+@router.get("/{org_id}/dashboard", response_model=AdminDashboardResponse)
+@require_permission(Permission.EDIT_ORGANIZATION)
+async def admin_dashboard(
+    org_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
 
-#     organization = session.get(Organization, org_id) 
-#     if not organization:
-#         raise HTTPException(status_code=404, detail="Organization not found")
+    organization = session.get(Organization, org_id) 
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
 
-#     members_query = select(OrganizationUser, User).join(
-#         User, OrganizationUser.user_id == User.id
-#     ).where(OrganizationUser.organization_id == org_id)
+    members_query = select(OrganizationUser, User).join(
+        User, OrganizationUser.user_id == User.id
+    ).where(OrganizationUser.organization_id == org_id)
     
-#     members  = session.exec(memoryview).all()
+    members  = session.exec(members_query).all()
 
 
-#     total_members = len(members)
-#     members_by_role = {}
-#     for org_user, _ in members:
-#         role = org_user.role
-#         members_by_role[role] = members_by_role.get(role, 0) + 1
+    total_members = len(members)
+    members_by_role = {}
+    for org_user, _ in members:
+        role = org_user.role
+        members_by_role[role] = members_by_role.get(role, 0) + 1
+    
+    active_invitations = len(session.exec(
+        select(Invitation).where(
+            Invitation.organization_id == org_id,
+            Invitation.expires_at > datetime.utcnow()
+        )
+    ).all())
+
+
+    return AdminDashboardResponse(
+        organization=OrganizationRead(
+            id=organization.id,
+            name=organization.name,
+            created_at=organization.created_at
+        ),
+        metrics=DashboardMetrics(
+            total_members=total_members,
+            members_by_role=members_by_role,
+            active_invitations=active_invitations
+        ),
+        members=[
+            DashboardMemberInfo(
+                user_id=user.id,
+                email=user.email,
+                full_name=user.full_name,
+                role=org_user.role,
+                joined_at=org_user.joined_at,
+                is_verified=user.is_verified
+            )
+            for org_user, user in members
+        ]
+    )
 
 @router.post("/{org_id}/invitations", response_model=InvitationResponse)
 @require_permission(Permission.INVITE_MEMBERS)
@@ -121,7 +153,6 @@ async def create_invitation(
         organization_name=organization.name
     )
 
-
 @router.get('{org_id}/invitations', response_model=List[InvitationResponse])
 @require_permission(Permission.INVITE_MEMBERS)
 async def list_pending_invitations(
@@ -191,7 +222,7 @@ async def accept_invitation(
         session.commit()
         raise HTTPException(
             status_code=400,
-            detail="You're already a member of this organization"
+            detail="You're already a member of this organizabtion"
         )
 
 
@@ -217,3 +248,21 @@ async def accept_invitation(
             status_code=500,
             detail=f"Error accepting invitations: {str(e)}"
         )
+
+@router.delete('/{org_id}/invitations/{invitation_id}')
+@require_permission(Permission.INVITE_MEMBERS)
+async def cancel_invitation(
+    org_id: UUID,
+    invitation_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    invitation = session.get(Invitation, invitation_id)
+    if not invitation or invitation.organization_id != org_id:
+        raise HTTPException(
+            status_code=404,
+            detail="Invitation not found"
+        )
+    session.delete(invitation)
+    session.commit()
+    return {   "message":" Invitation cancelled successfully"}
