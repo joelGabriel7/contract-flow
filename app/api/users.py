@@ -19,7 +19,7 @@ security = HTTPBearer()
 @router.get("/me", response_model=UserRead)
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
     response = current_user.dict()
-    if not current_user.is_personal:
+    if current_user.organizations:
         org = current_user.current_organization
         response["organization"] = {
             "id": org.id,
@@ -142,6 +142,36 @@ async def accept_invitation(
             detail=f"Error accepting invitations: {str(e)}"
         )
 
+@router.get("/invitations/pending")
+async def list_pending_invitations_by_email(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    # Buscar invitaciones usando el email del usuario actual
+    invitations = session.exec(
+        select(Invitation, Organization)
+        .join(Organization)
+        .where(
+            Invitation.email == current_user.email,
+            Invitation.expires_at > datetime.utcnow()
+        )
+    ).all()
+
+    return {
+        "invitations": [
+            {
+                "id": str(invitation.id),
+                "organization": {
+                    "id": str(organization.id),
+                    "name": organization.name
+                },
+                "role": invitation.role,
+                "token": invitation.token,
+                "expires_at": invitation.expires_at
+            }
+            for invitation, organization in invitations
+        ]
+    }
 
 @router.post('/logout')
 async def logout(
