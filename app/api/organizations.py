@@ -6,7 +6,7 @@ from typing import List
 from ..core.permission import require_permission, Permission
 from ..core.security import get_current_user, get_session
 from ..schemas.organization import AdminDashboardResponse, OrganizationRead, DashboardMemberInfo,DashboardMetrics,RoleUpdate
-from ..schemas.invitations import InvitationResponse, InvitationCreate, InvitationAccept
+from ..schemas.invitations import InvitationResponse, InvitationCreate
 from ..models.users import User
 from ..models.invitations import Invitation
 from ..models.organization import Organization, OrganizationUser, OrganizationRole
@@ -117,7 +117,9 @@ async def create_invitation(
             status_code=400,
             detail="An invitation is already pending for this email"
         )
-
+    user_exits = session.exec(
+        select(User).where(User.email == invitation_data.email)
+    ).first() is not None
     # Crear nueva invitación
     token = secrets.token_urlsafe(32)
     expires_at = datetime.utcnow() + timedelta(days=7)
@@ -134,16 +136,26 @@ async def create_invitation(
     session.commit()
     session.refresh(invitation)
 
-    # Enviar email en segundo plano
-    background_tasks.add_task(
-        email_service.send_invitation_email,
-        to_email=invitation_data.email,
-        organization_name=organization.name,
-        inviter_name=current_user.full_name,
-        invitation_token=token,
-        role=invitation_data.role,
-        custom_message=invitation_data.message
-    )
+    if user_exits:
+        background_tasks.add_task(
+            email_service.send_invitation_email,
+            to_email=invitation_data.email,
+            organization_name=organization.name,
+            inviter_name=current_user.full_name,
+            invitation_token=token,
+            role=invitation_data.role,
+            custom_message=invitation_data.message
+        )
+    else: 
+          background_tasks.add_task(
+            email_service.send_invitation_to_unregistered_email,
+            to_email=invitation_data.email,
+            organization_name=organization.name,
+            inviter_name=current_user.full_name,
+            invitation_token=token,
+            role=invitation_data.role,
+            custom_message=invitation_data.message
+        )
 
     return InvitationResponse(
         id=invitation.id,
@@ -180,74 +192,6 @@ async def list_pending_invitations(
         ) for invitation in invitations
     ]
 
-@router.post('/invitations/accept')
-async def accept_invitation(
-    invitation_data: InvitationAccept,
-    current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session)
-):
-    invitation = session.exec(
-        select(Invitation).where(
-            Invitation.token == invitation_data.token,
-            Invitation.expires_at > datetime.utcnow()
-        )
-    ).first()
-
-    if not invitation:
-        raise HTTPException(
-            status_code=404,
-            detail='Invalid or expired invitation'
-        )
-    
-    if current_user.email != invitation.email:
-        raise HTTPException(
-            status_code=403,
-            detail="This invitations was sent to a different email"
-        )
-    organization = session.get(Organization, invitation.organization_id)
-    if not organization:
-        raise HTTPException(
-            status_code=404,
-            detail="Organization not found"
-        )
-    existing_member = session.exec(
-        select(OrganizationUser).where(
-            OrganizationUser.user_id == current_user.id,
-            OrganizationUser.organization_id == invitation.id,
-        )
-    ).first()
-
-    if existing_member:
-        session.delete(invitation)
-        session.commit()
-        raise HTTPException(
-            status_code=400,
-            detail="You're already a member of this organizabtion"
-        )
-
-
-    try:
-        new_member = OrganizationUser(
-            organization_id=invitation.organization_id,
-            user_id = current_user.id,
-            role=invitation.role
-        )
-        session.add(new_member)
-        session.delete(invitation)
-        session.commit()
-
-        return {
-            "message": "Invitation accepted successfully",
-            "organization_id": str(invitation.organization_id),
-            "role": invitation.role
-        }
-
-    except Exception as e:
-        session.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error accepting invitations: {str(e)}"
-        )
 
 @router.delete('/{org_id}/invitations/{invitation_id}')
 @require_permission(Permission.INVITE_MEMBERS)

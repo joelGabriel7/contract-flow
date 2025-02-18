@@ -181,5 +181,56 @@ class EmailService:
             html_content=html_content,
         )
 
+    def send_invitation_to_unregistered_email(
+    self,
+    to_email: str,
+    organization_name: str,
+    inviter_name: str,
+    invitation_token: str,
+    role: OrganizationRole,
+    custom_message: Optional[str] = None
+    ) -> None:
+        html_content = f"""
+        <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <h2 style="color: #2C5282;">Invitación a {organization_name}</h2>
+                    
+                    <p>Hola,</p>
+                    
+                    <p>{inviter_name} te ha invitado a unirte a <strong>{organization_name}</strong> como <strong>{role.value}</strong>.</p>
+                    
+                    {f'<p style="background-color: #F7FAFC; padding: 15px; border-radius: 5px;">Mensaje del invitador:<br/>{custom_message}</p>' if custom_message else ''}
+                    
+                    <div style="background-color: #EBF8FF; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                        <p><strong>¿Cómo aceptar la invitación?</strong></p>
+                        <ol>
+                            <li>Primero, necesitas <a href="{''}/register">crear una cuenta</a> en ContractFlow</li>
+                            <li>Después de registrarte, inicia sesión</li>
+                            <li>Ve a la sección "Invitaciones Pendientes"</li>
+                            <li>Ingresa el siguiente código cuando se te solicite:</li>
+                        </ol>
+                        
+                        <div style="background: white; padding: 15px; text-align: center; border-radius: 5px; margin: 15px 0;">
+                            <code style="font-size: 24px; color: #4A90E2; letter-spacing: 2px;">{invitation_token}</code>
+                        </div>
+                    </div>
+                    
+                    <p><strong>Información importante:</strong></p>
+                    <ul style="padding-left: 20px;">
+                        <li>Esta invitación expirará en 7 días</li>
+                        <li>El código solo puede usarse una vez</li>
+                        <li>Debes usar el mismo email para registrarte ({to_email})</li>
+                    </ul>
+                </div>
+            </body>
+        </html>
+        """
+    
+        self._send_email(
+            to_email=to_email,
+            subject=f"Invitación para unirte a {organization_name} en ContractFlow",
+            html_content=html_content
+        )
 # Instancia global del servicio
 email_service = EmailService()
