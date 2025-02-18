@@ -5,11 +5,11 @@ from typing import List
 
 from ..core.permission import require_permission, Permission
 from ..core.security import get_current_user, get_session
-from ..schemas.organization import AdminDashboardResponse, OrganizationRead, DashboardMemberInfo,DashboardMetrics
+from ..schemas.organization import AdminDashboardResponse, OrganizationRead, DashboardMemberInfo,DashboardMetrics,RoleUpdate
 from ..schemas.invitations import InvitationResponse, InvitationCreate, InvitationAccept
 from ..models.users import User
 from ..models.invitations import Invitation
-from ..models.organization import Organization, OrganizationUser
+from ..models.organization import Organization, OrganizationUser, OrganizationRole
 from ..services.email_services import email_service
 
 import secrets
@@ -254,15 +254,153 @@ async def accept_invitation(
 async def cancel_invitation(
     org_id: UUID,
     invitation_id: UUID,
+    user_id: UUID,
+    background_task: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     invitation = session.get(Invitation, invitation_id)
+    user = session.get(User,user_id)
+    organization = session.get(Organization, org_id)
     if not invitation or invitation.organization_id != org_id:
         raise HTTPException(
             status_code=404,
             detail="Invitation not found"
         )
-    session.delete(invitation)
-    session.commit()
-    return {   "message":" Invitation cancelled successfully"}
+
+    try:
+        session.delete(invitation)
+       
+        background_task.add_task(
+            email_service.send_invitation_cancelled_email,
+            to_email= user.email,
+            organization_name = organization.name
+        )
+        session.commit()
+        return {   "message":" Invitation cancelled successfully"}
+    except Exception as e: 
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error cancelling invitation: \n {str(e)}"
+        )
+    
+  
+@router.delete( '/{org_id}/members/{user_id}' )
+@require_permission(Permission.REMOVE_MEMBERS)
+async def remove_member(
+    org_id: UUID,
+    user_id: UUID,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+
+): 
+    org_user = session.exec(
+        select(OrganizationUser).where(
+            OrganizationUser.organization_id == org_id,
+            OrganizationUser.user_id == user_id
+        )
+    ).first()
+
+
+    if not org_user: 
+        raise HTTPException(
+            status_code=404,
+            detail="Member not found in organization"
+        )
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot remove yourself from the organization"
+        )
+    
+    if org_user.role == OrganizationRole.ADMIN:
+        admin_count = len(session.exec(
+            select(OrganizationUser).where(
+                OrganizationUser.organization_id == org_id,
+                OrganizationUser.role == OrganizationRole.ADMIN
+            )
+        ).all())
+
+        if admin_count <= 1: 
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot remove the last admin of the organization"
+            )
+        organization = session.get(Organization, org_id)
+        user = session.get(User, user_id)
+    try :
+        session.delete(org_user)
+        session.commit()
+
+        background_tasks.add_task(
+            email_service.send_member_remove_email,
+            to_email=user.email,
+            organization_name=organization.name
+        )
+
+        return {"message": "Member removed successfully"}
+
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error removing member: \n{str(e)} "
+        )
+
+@router.put("/{org_id}/members/change-role/{user_id}")
+@require_permission(Permission.EDIT_ORGANIZATION)
+async def update_member_role(
+    org_id: UUID,
+    user_id: UUID,
+    role_update: RoleUpdate,
+    background_task: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    # check if the members exists
+    org_user = session.exec(
+        select(OrganizationUser).where(
+            OrganizationUser.organization_id == org_id,
+            OrganizationUser.user_id == user_id
+        )
+    ).first()
+    
+    if not org_user:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    # Prevenir auto-modificación de rol
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot modify your own role"
+        )
+    
+    try:
+        organization = session.get(Organization, org_id)
+        user = session.get(User, user_id)
+
+        org_user.role = role_update.role
+        session.add(org_user)
+        session.commit()
+        session.refresh(org_user)
+
+        background_task.add_task(
+            email_service.send_role_update_email,
+            to_email=user.email,
+            organization_name=organization.name,
+            new_role=role_update.role
+        )
+
+        return {
+            "message": "Role updated successfully",
+            "user_id": str(user_id),
+            "new_role": role_update.role
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error update role member: \n {str(e)}"
+        )
+   

@@ -41,3 +41,7 @@ class AdminDashboardResponse(SQLModel):
     organization: OrganizationRead
     metrics: DashboardMetrics
     members: List[DashboardMemberInfo]
+
+# app/schemas/organization.py
+class RoleUpdate(SQLModel):
+    role: OrganizationRole
