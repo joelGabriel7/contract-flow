@@ -8,6 +8,7 @@ from typing import Optional
 
 settings = get_settings()
 
+
 class EmailService:
     def __init__(self):
         self.smtp_server = settings.MAIL_SERVER
@@ -45,7 +46,8 @@ class EmailService:
             </body>
         </html>
         """
-    def _get_reset_password_template(self, code: str) -> str:   
+
+    def _get_reset_password_template(self, code: str) -> str:
         return f"""
         <html>
             <body>
@@ -65,7 +67,7 @@ class EmailService:
         inviter_name: str,
         invitation_token: str,
         role: OrganizationRole,
-        custom_message: Optional[str] = None
+        custom_message: Optional[str] = None,
     ) -> None:
         html_content = f"""
         <html>
@@ -77,13 +79,13 @@ class EmailService:
                     
                     <p>{inviter_name} te ha invitado a unirte a <strong>{organization_name}</strong> como <strong>{role.value}</strong>.</p>
                     
-                    {f'<p style="background-color: #F7FAFC; padding: 15px; border-radius: 5px;">Mensaje del invitador:<br/>{custom_message}</p>' if custom_message else ''}
+                    {f'<p style="background-color: #F7FAFC; padding: 15px; border-radius: 5px;">Mensaje del invitador:<br/>{custom_message}</p>' if custom_message else ""}
                     
                     <div style="background-color: #EBF8FF; padding: 20px; border-radius: 8px; margin: 20px 0;">
                         <p><strong>¿Cómo aceptar la invitación?</strong></p>
                         <ol>
-                            <li>Inicia sesión en ContractFlow (<a href="{'http://localhost:8000/api/auth/login'}">ir al login</a>)</li>
-                            <li>Ve a la sección "Invitaciones Pendientes" (<a href="{'http://localhost:8000/api/auth/login'}/invitations">ir a invitaciones</a>)</li>
+                            <li>Inicia sesión en ContractFlow (<a href="{"http://localhost:8000/api/auth/login"}">ir al login</a>)</li>
+                            <li>Ve a la sección "Invitaciones Pendientes" (<a href="{"http://localhost:8000/api/auth/login"}/invitations">ir a invitaciones</a>)</li>
                             <li>Ingresa el siguiente código cuando se te solicite:</li>
                         </ol>
                         
@@ -107,11 +109,11 @@ class EmailService:
             </body>
         </html>
         """
-        
+
         self._send_email(
             to_email=to_email,
             subject=f"Invitación para unirte a {organization_name} en ContractFlow",
-            html_content=html_content
+            html_content=html_content,
         )
 
     def _get_role_description(self, role: OrganizationRole) -> str:
@@ -119,27 +121,64 @@ class EmailService:
         descriptions = {
             OrganizationRole.ADMIN: "gestionar miembros, contratos y configuraciones de la organización",
             OrganizationRole.EDITOR: "crear y editar contratos, ver miembros del equipo",
-            OrganizationRole.VIEWER: "ver contratos y miembros del equipo"
+            OrganizationRole.VIEWER: "ver contratos y miembros del equipo",
         }
         return descriptions.get(role, "acceder a funcionalidades básicas")
 
     @staticmethod
     def generate_verification_code() -> str:
-        return ''.join(secrets.choice('0123456789') for _ in range(6))
+        return "".join(secrets.choice("0123456789") for _ in range(6))
 
     def send_verification_email(self, to_email: str, code: str) -> None:
         html_content = self._get_verification_template(code)
         self._send_email(
             to_email=to_email,
             subject="Verifica tu cuenta de ContractFlow",
-            html_content=html_content
+            html_content=html_content,
         )
+
     def send_reset_password_email(self, to_email: str, code: str) -> None:
         html_content = self._get_reset_password_template(code)
         self._send_email(
             to_email=to_email,
             subject="Reset Your ContractFlow Password",
-            html_content=html_content
+            html_content=html_content,
+        )
+
+    def send_invitation_cancelled_email(self, to_email: str, organization_name: str):
+        html_content = f"""
+                <h2>Invitacion Cancelada</h2>
+                <p>La invitación para unirte a {organization_name} ha sido cancelada.</p>
+                <p>Si crees que esto es un error, contacta al administrador de la organización.</p>
+        """
+        self._send_email(
+            to_email=to_email,
+            subject=f"Invitación a {organization_name} Cancelada",
+            html_content=html_content,
+        )
+
+    def send_member_remove_email(self, to_email: str, organization_name: str):
+        html_content = f"""
+                <h2>Membresia Finalizada</h2>
+                <p>Ya no eres miembro de: {organization_name}</p>
+                <p>Si tienes preguntas, por favor contacta al administrador de la organización.</p>
+        """
+        self._send_email(
+            to_email=to_email,
+            subject=f"Membresia en {organization_name} Finalizada",
+            html_content=html_content,
+        )
+
+    def send_role_update_email(self, to_email: str, organization_name: str, new_role: OrganizationRole):
+        html_content = f"""
+                <h2>Su Rol ha sido actualizadp en {organization_name} </h2>
+                <p>Tu rol ha sido actualizado a {new_role.value}</p>
+                <p>Este cambio afecta tus permisos en la organización.</p>
+        """
+        self._send_email(
+            to_email=to_email,
+            subject=f"Actualización de rol en {organization_name}",
+            html_content=html_content,
         )
 
 # Instancia global del servicio
