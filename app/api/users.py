@@ -1,11 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException,Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlmodel import select
+from datetime import datetime
+
 from ..core.security import get_current_user, redis_service
 from ..models.users import User
+from ..models.invitations import Invitation
+from ..models.organization import OrganizationUser, Organization
 from ..schemas.users import UserRead, UserUpdate
+from ..schemas.invitations import InvitationAccept
 from ..core.database import get_session, Session
 from ..core.security import verify_password, get_password_hash
-from sqlmodel import select
 
 
 router = APIRouter()
@@ -67,6 +72,75 @@ async def update_profile(
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post('/invitations/accept')
+async def accept_invitation(
+    invitation_data: InvitationAccept,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    invitation = session.exec(
+        select(Invitation).where(
+            Invitation.token == invitation_data.token,
+            Invitation.expires_at > datetime.utcnow()
+        )
+    ).first()
+
+    if not invitation:
+        raise HTTPException(
+            status_code=404,
+            detail='Invalid or expired invitation'
+        )
+    
+    if current_user.email != invitation.email:
+        raise HTTPException(
+            status_code=403,
+            detail="This invitations was sent to a different email"
+        )
+    organization = session.get(Organization, invitation.organization_id)
+    if not organization:
+        raise HTTPException(
+            status_code=404,
+            detail="Organization not found"
+        )
+    existing_member = session.exec(
+        select(OrganizationUser).where(
+            OrganizationUser.user_id == current_user.id,
+            OrganizationUser.organization_id == invitation.id,
+        )
+    ).first()
+
+    if existing_member:
+        session.delete(invitation)
+        session.commit()
+        raise HTTPException(
+            status_code=400,
+            detail="You're already a member of this organizabtion"
+        )
+
+
+    try:
+        new_member = OrganizationUser(
+            organization_id=invitation.organization_id,
+            user_id = current_user.id,
+            role=invitation.role
+        )
+        session.add(new_member)
+        session.delete(invitation)
+        session.commit()
+
+        return {
+            "message": "Invitation accepted successfully",
+            "organization_id": str(invitation.organization_id),
+            "role": invitation.role
+        }
+
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error accepting invitations: {str(e)}"
+        )
 
 
 @router.post('/logout')
