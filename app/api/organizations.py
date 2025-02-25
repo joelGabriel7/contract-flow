@@ -5,7 +5,7 @@ from typing import List
 
 from ..core.permission import require_permission, Permission
 from ..core.security import get_current_user, get_session
-from ..schemas.organization import AdminDashboardResponse, OrganizationRead, DashboardMemberInfo,DashboardMetrics,RoleUpdate
+from ..schemas.organization import AdminDashboardResponse, OrganizationRead, DashboardMemberInfo, DashboardMetrics, RoleUpdate
 from ..schemas.invitations import InvitationResponse, InvitationCreate
 from ..models.users import User
 from ..models.invitations import Invitation
@@ -16,8 +16,8 @@ import secrets
 from datetime import datetime, timedelta
 
 
-
 router = APIRouter()
+
 
 @router.get("/{org_id}/dashboard", response_model=AdminDashboardResponse)
 @require_permission(Permission.EDIT_ORGANIZATION)
@@ -27,30 +27,28 @@ async def admin_dashboard(
     session: Session = Depends(get_session)
 ):
 
-    organization = session.get(Organization, org_id) 
+    organization = session.get(Organization, org_id)
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
 
     members_query = select(OrganizationUser, User).join(
         User, OrganizationUser.user_id == User.id
     ).where(OrganizationUser.organization_id == org_id)
-    
-    members  = session.exec(members_query).all()
 
+    members = session.exec(members_query).all()
 
     total_members = len(members)
     members_by_role = {}
     for org_user, _ in members:
         role = org_user.role
         members_by_role[role] = members_by_role.get(role, 0) + 1
-    
+
     active_invitations = len(session.exec(
         select(Invitation).where(
             Invitation.organization_id == org_id,
             Invitation.expires_at > datetime.utcnow()
         )
     ).all())
-
 
     return AdminDashboardResponse(
         organization=OrganizationRead(
@@ -76,6 +74,7 @@ async def admin_dashboard(
         ]
     )
 
+
 @router.post("/{org_id}/invitations", response_model=InvitationResponse)
 @require_permission(Permission.INVITE_MEMBERS)
 async def create_invitation(
@@ -96,7 +95,7 @@ async def create_invitation(
             OrganizationUser.organization_id == org_id
         )
     ).first()
-    
+
     if existing_member:
         raise HTTPException(
             status_code=400,
@@ -131,7 +130,7 @@ async def create_invitation(
         token=token,
         expires_at=expires_at
     )
-    
+
     session.add(invitation)
     session.commit()
     session.refresh(invitation)
@@ -146,8 +145,8 @@ async def create_invitation(
             role=invitation_data.role,
             custom_message=invitation_data.message
         )
-    else: 
-          background_tasks.add_task(
+    else:
+        background_tasks.add_task(
             email_service.send_invitation_to_unregistered_email,
             to_email=invitation_data.email,
             organization_name=organization.name,
@@ -164,6 +163,7 @@ async def create_invitation(
         expires_at=invitation.expires_at,
         organization_name=organization.name
     )
+
 
 @router.get('{org_id}/invitations', response_model=List[InvitationResponse])
 @require_permission(Permission.INVITE_MEMBERS)
@@ -183,12 +183,12 @@ async def list_pending_invitations(
 
     return [
         InvitationResponse(
-            id= invitation.id,
-            email= invitation.email,
-            role = invitation.role,
-            expires_at = invitation.expires_at,
+            id=invitation.id,
+            email=invitation.email,
+            role=invitation.role,
+            expires_at=invitation.expires_at,
             organization_name=organization.name
-            
+
         ) for invitation in invitations
     ]
 
@@ -204,7 +204,7 @@ async def cancel_invitation(
     session: Session = Depends(get_session)
 ):
     invitation = session.get(Invitation, invitation_id)
-    user = session.get(User,user_id)
+    user = session.get(User, user_id)
     organization = session.get(Organization, org_id)
     if not invitation or invitation.organization_id != org_id:
         raise HTTPException(
@@ -214,23 +214,23 @@ async def cancel_invitation(
 
     try:
         session.delete(invitation)
-       
+
         background_task.add_task(
             email_service.send_invitation_cancelled_email,
-            to_email= user.email,
-            organization_name = organization.name
+            to_email=user.email,
+            organization_name=organization.name
         )
         session.commit()
-        return {   "message":" Invitation cancelled successfully"}
-    except Exception as e: 
+        return {"message": " Invitation cancelled successfully"}
+    except Exception as e:
         session.rollback()
         raise HTTPException(
             status_code=500,
             detail=f"Error cancelling invitation: \n {str(e)}"
         )
-    
-  
-@router.delete( '/{org_id}/members/{user_id}' )
+
+
+@router.delete('/{org_id}/members/{user_id}')
 @require_permission(Permission.REMOVE_MEMBERS)
 async def remove_member(
     org_id: UUID,
@@ -239,7 +239,7 @@ async def remove_member(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 
-): 
+):
     org_user = session.exec(
         select(OrganizationUser).where(
             OrganizationUser.organization_id == org_id,
@@ -247,8 +247,7 @@ async def remove_member(
         )
     ).first()
 
-
-    if not org_user: 
+    if not org_user:
         raise HTTPException(
             status_code=404,
             detail="Member not found in organization"
@@ -258,7 +257,7 @@ async def remove_member(
             status_code=400,
             detail="Cannot remove yourself from the organization"
         )
-    
+
     if org_user.role == OrganizationRole.ADMIN:
         admin_count = len(session.exec(
             select(OrganizationUser).where(
@@ -267,14 +266,14 @@ async def remove_member(
             )
         ).all())
 
-        if admin_count <= 1: 
+        if admin_count <= 1:
             raise HTTPException(
                 status_code=400,
                 detail="Cannot remove the last admin of the organization"
             )
         organization = session.get(Organization, org_id)
         user = session.get(User, user_id)
-    try :
+    try:
         session.delete(org_user)
         session.commit()
 
@@ -293,6 +292,7 @@ async def remove_member(
             detail=f"Error removing member: \n{str(e)} "
         )
 
+
 @router.put("/{org_id}/members/change-role/{user_id}")
 @require_permission(Permission.EDIT_ORGANIZATION)
 async def update_member_role(
@@ -310,17 +310,17 @@ async def update_member_role(
             OrganizationUser.user_id == user_id
         )
     ).first()
-    
+
     if not org_user:
         raise HTTPException(status_code=404, detail="Member not found")
 
     # Prevenir auto-modificación de rol
     if user_id == current_user.id:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Cannot modify your own role"
         )
-    
+
     try:
         organization = session.get(Organization, org_id)
         user = session.get(User, user_id)
@@ -347,4 +347,3 @@ async def update_member_role(
             status_code=500,
             detail=f"Error update role member: \n {str(e)}"
         )
-   

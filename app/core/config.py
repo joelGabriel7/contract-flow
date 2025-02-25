@@ -1,17 +1,18 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
+
 class Settings(BaseSettings):
 
     DATABASE_URL: str
-    POSTGRES_USER:str
-    POSTGRES_PASSWORD:str
-    POSTGRES_DB:str
-    PGADMIN_DEFAULT_EMAIL:str
-    PGADMIN_DEFAULT_PASSWORD:str
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_DB: str
+    PGADMIN_DEFAULT_EMAIL: str
+    PGADMIN_DEFAULT_PASSWORD: str
     REDIS_HOST: str
     REDIS_PORT: str
-    
+
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30

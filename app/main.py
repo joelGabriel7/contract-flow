@@ -12,29 +12,33 @@ app = FastAPI(
     version="0.0.1"
 )
 
+
 def create_db_and_tables():
     SQLModel.metadata.create_all(engine)
 
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['http://locahost:5173'], # Frontend URL (Vite default)
+    allow_origins=['http://localhost:5173'],  # Frontend URL (Vite default)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @app.on_event("startup")
 async def on_startup():
     create_db_and_tables()
 
 
-@app.get("/api/health",tags=['Health Check'])
+@app.get("/api/health", tags=['Health Check'])
 async def health_check():
     return {"status": "ok", "message": "ContractFlow API is running"}
 
 app.include_router(auth_router, prefix='/api/auth', tags=['Authentication'])
 app.include_router(user_router, prefix='/api/users', tags=['Users'])
-app.include_router(org_router, prefix='/api/organizations', tags=['Admin Organizations'])
+app.include_router(org_router, prefix='/api/organizations',
+                   tags=['Admin Organizations'])
 
 if __name__ == "__main__":
     import uvicorn

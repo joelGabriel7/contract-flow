@@ -29,7 +29,6 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
         }
     return response
 
-
 @router.patch("/profile", response_model=UserRead)
 async def update_profile(
     user_data: UserUpdate,
