@@ -1,3 +1,86 @@
+"""
+    Organization Management API Documentation
+
+    Overview
+    This module implements a FastAPI router for managing organizations, providing endpoints for organization administration, member management, invitations, and settings configuration.
+
+    Key Features
+    - Organization dashboard and metrics
+    - Member management (roles, removal)
+    - Invitation system
+    - Settings management
+    - Permission-based access control
+
+    Endpoints
+
+    Organization Details
+    - `GET /organizations/me`
+    - Returns current user's organization details
+    - Requires `EDIT_ORGANIZATION` permission
+    - Returns: Organization info and settings
+
+    Dashboard
+    - `GET /organizations/{org_id}/dashboard`
+    - Retrieves admin dashboard data
+    - Includes member statistics and metrics
+    - Requires `EDIT_ORGANIZATION` permission
+
+    Member Management
+    - `PUT /organizations/{org_id}/members/change-role/{user_id}`
+    - Updates member roles
+    - Sends email notification
+    - Prevents self-role modification
+    - Requires `EDIT_ORGANIZATION` permission
+
+    - `DELETE /organizations/{org_id}/members/{user_id}`
+    - Removes organization members
+    - Validates admin count
+    - Sends removal notification
+    - Requires `REMOVE_MEMBERS` permission
+
+    Invitation System
+    - `POST /organizations/{org_id}/invitations`
+    - Creates new member invitations
+    - Validates existing membership/invitations
+    - Sends different emails for registered/unregistered users
+    - Requires `INVITE_MEMBERS` permission
+
+    - `GET /organizations/{org_id}/invitations`
+    - Lists pending invitations
+    - Requires `INVITE_MEMBERS` permission
+
+    - `DELETE /organizations/{org_id}/invitations/{invitation_id}`
+    - Cancels pending invitations
+    - Sends cancellation notification
+    - Requires `INVITE_MEMBERS` permission
+
+    Settings Management
+    - `GET /organizations/{org_id}/settings`
+    - Retrieves organization settings
+    - Includes storage usage metrics
+    - Requires `EDIT_ORGANIZATION` permission
+
+    - `PUT /organizations/{org_id}/settings`
+    - Updates organization settings
+    - Validates storage limits
+    - Maintains existing settings
+    - Requires `EDIT_ORGANIZATION` permission
+
+    Security Features
+    - Permission-based access control using decorators
+    - Role validation for critical operations
+    - Protection against self-role modification
+    - Storage limit validation
+    - Last admin removal prevention
+
+    Email Notifications
+    The system sends automated emails for:
+    - New invitations (different templates for registered/unregistered users)
+    - Invitation cancellations
+    - Member removals
+    - Role updates
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlmodel import Session, select
 from uuid import UUID
