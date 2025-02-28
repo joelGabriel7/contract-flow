@@ -53,3 +53,40 @@ class AdminDashboardResponse(SQLModel):
 
 class RoleUpdate(SQLModel):
     role: OrganizationRole
+
+
+class SecuritySettings(SQLModel):
+    require_2fa: bool = False
+    session_timeout_minutes: int = 60
+    password_expiry_days: Optional[int] = None
+    ip_restrictions: Optional[List[str]] = None
+
+
+class NotificationSettings(SQLModel):
+    email_digest: bool = True
+    new_member_alerts: bool = True
+    contract_updates: bool = True
+    daily_summary: bool = True
+
+
+class StorageSettings(SQLModel):
+    limit_gb: int = 50
+    auto_delete_days: Optional[int] = None
+    allow_external_sharing: bool = False
+
+
+class OrganizationSettings(SQLModel):
+    security: SecuritySettings
+    notifications: NotificationSettings
+    storage: StorageSettings
+
+
+class OrganizationSettingsUpdate(SQLModel):
+    security: Optional[SecuritySettings] = None
+    notifications: Optional[NotificationSettings] = None
+    storage: Optional[StorageSettings] = None
+
+
+class OrganizationDetailResponse(SQLModel):
+    organization: OrganizationRead
+    settings: OrganizationSettings

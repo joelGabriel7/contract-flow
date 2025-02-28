@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlmodel import Session, select
 from uuid import UUID
-from typing import List
+from typing import List, Optional
 
 from ..core.permission import require_permission, Permission
-from ..core.security import get_current_user, get_session
-from ..schemas.organization import AdminDashboardResponse, OrganizationRead, DashboardMemberInfo, DashboardMetrics, RoleUpdate
+from ..core.security import get_current_user, get_session, get_current_user_with_org
+from ..schemas.organization import AdminDashboardResponse, OrganizationRead, DashboardMemberInfo, DashboardMetrics, RoleUpdate, OrganizationSettings, OrganizationSettingsUpdate, OrganizationDetailResponse
 from ..schemas.invitations import InvitationResponse, InvitationCreate
 from ..models.users import User
 from ..models.invitations import Invitation
@@ -19,6 +19,48 @@ from datetime import datetime, timedelta
 router = APIRouter()
 
 
+@router.get("/me", response_model=OrganizationDetailResponse)
+@require_permission(Permission.EDIT_ORGANIZATION)
+async def get_my_organization(
+    current_data: tuple[User, Optional[Organization]] = Depends(get_current_user_with_org)
+):
+    """
+        Retrieve the current user's organization details.
+
+        This asynchronous function fetches the organization associated with the
+        current user. If no organization is found, it raises an HTTP 404 error.
+        Returns an `OrganizationDetailResponse` containing the organization's
+        basic information and settings.
+
+        Args:
+            current_data (tuple[User, Optional[Organization]]): A tuple containing
+            the current user and their associated organization, obtained via dependency
+            injection.
+
+        Returns:
+            OrganizationDetailResponse: The response model containing the organization's
+            details and settings.
+
+        Raises:
+            HTTPException: If no organization is found for the current user.
+    """
+    user, organization = current_data
+
+    if not organization:
+        raise HTTPException(
+            status_code=404,
+            detail="No organization found for current user"
+        )
+
+    return OrganizationDetailResponse(
+        organization=OrganizationRead(
+            id=organization.id,
+            name=organization.name,
+            created_at=organization.created_at
+        ),
+        settings=organization.settings
+    )
+
 @router.get("/{org_id}/dashboard", response_model=AdminDashboardResponse)
 @require_permission(Permission.EDIT_ORGANIZATION)
 async def admin_dashboard(
@@ -26,6 +68,24 @@ async def admin_dashboard(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
+    """
+    Retrieves and compiles organization dashboard data for administrators.
+
+    Fetches organization details, member information, and metrics including role distribution
+    and active invitations. Returns a structured AdminDashboardResponse with organization data,
+    metrics, and detailed member information.
+
+    Args:
+        org_id: UUID of the organization to retrieve dashboard data for
+        current_user: Authenticated user making the request
+        session: Database session for executing queries
+
+    Returns:
+        AdminDashboardResponse containing organization details, metrics, and member information
+
+    Raises:
+        HTTPException: If organization with the provided ID is not found (404)
+    """
 
     organization = session.get(Organization, org_id)
     if not organization:
@@ -84,6 +144,24 @@ async def create_invitation(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
+
+    """
+    Creates a new invitation for a user to join an organization and sends an email notification.
+
+    Args:
+        org_id: UUID of the organization
+        invitation_data: Data for creating the invitation including email and role
+        background_tasks: FastAPI background tasks handler
+        current_user: Currently authenticated user
+        session: Database session
+
+    Returns:
+        InvitationResponse with the created invitation details
+
+    Raises:
+        HTTPException: If organization not found, user is already a member, or pending invitation exists
+    """
+
     organization = session.get(Organization, org_id)
     if not organization:
         raise HTTPException(status_code=404, detail="Organization not found")
@@ -172,6 +250,17 @@ async def list_pending_invitations(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
+    """
+    Retrieves all active pending invitations for a specific organization.
+
+    Args:
+        org_id: UUID of the organization
+        current_user: Authenticated user from token
+        session: Database session
+
+    Returns:
+        List of InvitationResponse objects containing invitation details
+    """
     invitations = session.exec(
         select(Invitation).where(
             Invitation.organization_id == org_id,
@@ -203,6 +292,24 @@ async def cancel_invitation(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
+
+    """
+    Cancels an organization invitation and notifies the user via email.
+
+    Args:
+        org_id (UUID): Organization identifier
+        invitation_id (UUID): Invitation identifier
+        user_id (UUID): User identifier
+        background_task (BackgroundTasks): FastAPI background task handler
+        current_user (User): Currently authenticated user
+        session (Session): Database session
+
+    Returns:
+        dict: Success message on successful cancellation
+
+    Raises:
+        HTTPException: If invitation not found or error during cancellation
+    """
     invitation = session.get(Invitation, invitation_id)
     user = session.get(User, user_id)
     organization = session.get(Organization, org_id)
@@ -240,6 +347,23 @@ async def remove_member(
     current_user: User = Depends(get_current_user),
 
 ):
+    """
+    Removes a member from an organization with validation checks and email notification.
+
+    Args:
+        org_id (UUID): Organization identifier
+        user_id (UUID): User identifier to remove
+        background_tasks (BackgroundTasks): Task queue for async email sending
+        session (Session): Database session
+        current_user (User): Currently authenticated user
+
+    Raises:
+        HTTPException: If member not found, trying to remove self, removing last admin,
+                    or database error occurs
+
+    Returns:
+        dict: Success message confirmation
+    """
     org_user = session.exec(
         select(OrganizationUser).where(
             OrganizationUser.organization_id == org_id,
@@ -303,6 +427,24 @@ async def update_member_role(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
+
+    """
+    Updates the role of an organization member and sends a notification email.
+
+    Args:
+        org_id (UUID): Organization identifier
+        user_id (UUID): User identifier to update
+        role_update (RoleUpdate): New role information
+        background_task (BackgroundTasks): Task queue for email sending
+        current_user (User): Authenticated user making the request
+        session (Session): Database session
+
+    Returns:
+        dict: Message confirming role update with user ID and new role
+
+    Raises:
+        HTTPException: If member not found (404), self-modification attempted (400),or update fails (500)
+    """
     # check if the members exists
     org_user = session.exec(
         select(OrganizationUser).where(
@@ -347,3 +489,102 @@ async def update_member_role(
             status_code=500,
             detail=f"Error update role member: \n {str(e)}"
         )
+
+@router.get("/{org_id}/settings", response_model=OrganizationSettings)
+@require_permission(Permission.EDIT_ORGANIZATION)
+async def get_organization_settings(
+    org_id: UUID,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Retrieves and formats organization settings with storage usage.
+
+    Args:
+        org_id: UUID of the organization
+        current_user: Authenticated user from token
+        session: Database session
+
+    Returns:
+        Dict containing organization settings with storage usage in GB
+
+    Raises:
+        HTTPException: If organization is not found
+    """
+    organization = session.get(Organization, org_id)
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    settings = dict(organization.settings)
+    settings['storage']['used_gb'] = organization.storage_used / (1024 ** 3)
+
+    return settings
+
+
+@router.put("/{org_id}/settings", response_model=OrganizationSettings)
+@require_permission(Permission.EDIT_ORGANIZATION)
+async def update_organization_settings(
+    org_id: UUID,
+    settings_update: OrganizationSettingsUpdate,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Updates organization settings for specified sections (security, notifications, storage).
+    Validates storage limit against current usage and maintains existing settings.
+
+    Args:
+        org_id: UUID of the organization
+        settings_update: Settings to update
+        current_user: Authenticated user making the request
+        session: Database session
+
+    Returns:
+        OrganizationSettings: Updated organization settings
+
+    Raises:
+        HTTPException: If organization not found (404) or storage limit below usage (400)
+"""
+    organization = session.get(Organization, org_id)
+    if not organization:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    if organization.settings is None:
+        organization.settings = {}
+
+    current_settings = dict(organization.settings)
+    for section in ["security", "notifications", "storage"]:
+        if section not in current_settings:
+            current_settings[section] = {}
+
+    storage_used_gb = organization.storage_used / (1024 * 1024 * 1024)
+
+    update_dict = settings_update.dict(exclude_unset=True)
+    for section, values in update_dict.items():
+        if values:
+            if section not in current_settings:
+                current_settings[section] = {}
+            current_settings[section].update(values)
+    if (
+        "storage" in update_dict and
+        "limit_gb" in update_dict.get("storage", {}) and
+        update_dict["storage"]["limit_gb"] < storage_used_gb
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot set storage limit below current usage"
+        )
+
+    
+    organization.settings = current_settings
+    session.add(organization)
+    session.commit()
+    session.refresh(organization)
+
+    result_settings = dict(organization.settings)
+    if "storage" not in result_settings:
+        result_settings["storage"] = {}
+    result_settings["storage"]["used_gb"] = storage_used_gb
+
+
+    return OrganizationSettings(**result_settings)
