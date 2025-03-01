@@ -25,8 +25,7 @@ class Organization(OrganizationBase, TimestampModel, table=True):
         back_populates="organization")
 
     __table_args__ = (
-        Index('ix_organization_settings_gin',
-              'settings', postgresql_using='gin'),
+        
     )
 
     def get_user_role(self, user_id: UUID):

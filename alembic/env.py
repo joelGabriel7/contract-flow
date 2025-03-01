@@ -4,8 +4,7 @@ from sqlalchemy import pool
 from alembic import context
 from app.core.config import get_settings
 from sqlmodel import SQLModel
-from app.models import *  # Importa todos los modelos
-
+from app.models import * 
 
 # Obtener la configuración
 config = context.config
