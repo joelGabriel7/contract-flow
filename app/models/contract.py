@@ -64,7 +64,7 @@ class Contract(TimestampModel, table=True):
 
     # ownerships
     owner_id: UUID = Field(foreign_key="user.id")
-    owner: User = Relationship()
+    owner: User = Relationship(sa_relationship_kwargs={"foreign_keys": "[Contract.owner_id]"})
 
     organization_id: Optional[UUID] = Field(default=None, foreign_key="organization.id")
     organization: Optional[Organization] = Relationship()
@@ -74,6 +74,7 @@ class Contract(TimestampModel, table=True):
     current_version: int = Field(default=1)
 
     last_activity_by_id: UUID = Field(foreign_key="user.id")
+    last_activity_by: User = Relationship(sa_relationship_kwargs={"foreign_keys": "[Contract.last_activity_by_id]"})
     last_activity: Optional[datetime] = Field(default_factory=datetime.utcnow)
 
 
@@ -134,7 +135,7 @@ class ContractVersion(TimestampModel, table=True):
     id: UUID = Field(default=None, primary_key=True)
     # Contract reference
     contract_id: UUID = Field(foreign_key="contract.id", primary_key=True)
-    version: UUID = Field(primary_key=True)  # Incremental version number
+    version: int = Field(primary_key=True)  # Incremental version number
 
     # Content storage
     content: dict = Field(sa_column=Column(JSON))  # JSON structure of contract content
