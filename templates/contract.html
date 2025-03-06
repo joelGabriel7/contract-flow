@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{{ contract.title }}</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 40px;
+            line-height: 1.5;
+            color: #333;
+        }
+        .header { 
+            text-align: center; 
+            margin-bottom: 30px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 20px;
+        }
+        .title { 
+            font-size: 24px; 
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .parties { 
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        .party {
+            margin: 5px 0;
+            padding: 5px 0;
+        }
+        .content { 
+            margin: 20px 0;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        .section h2 {
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .subsection {
+            margin-left: 20px;
+            margin-bottom: 15px;
+        }
+        .subsection h3 {
+            font-size: 16px;
+        }
+        .signatures { 
+            margin-top: 50px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .signature-block {
+            width: 45%;
+            border-top: 1px solid #000;
+            padding-top: 5px;
+            margin-top: 70px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">{{ contract.title }}</div>
+        <div class="date">Effective Date: {{ contract.effective_date }}</div>
+    </div>
+    
+    <div class="parties">
+        <h3>Parties to this Agreement:</h3>
+        {% for party in parties %}
+        <div class='party'>{{ party.name }}</div>
+        {% endfor %}
+    </div>
+    
+    <div class="content">
+        {{ content_html|safe }}
+    </div>
+    
+    <div class="signatures">
+        {% for party in parties %}
+        <div class="signature-block">
+            <div>{{ party.name }}</div>
+            <div>Date: ________________</div>
+        </div>
+        {% endfor %}
+    </div>
+</body>
+</html> 

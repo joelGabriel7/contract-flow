@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import List, Optional
 from sqlmodel import Field, Relationship,Column, JSON
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.models.base import TimestampModel
 from app.models.users import User
@@ -40,7 +40,7 @@ class ContractTemplateType(str, Enum):
 
 class Contract(TimestampModel, table=True):
     """Primary contract entity representing a legal agreement"""
-    id: UUID = Field(default=None, primary_key=True)
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
     # [CHALLENGE 2] Complete the Contract model fields
     # Requirements:
     # - Add description field (optional string)
@@ -99,7 +99,7 @@ class ContractPartyType(str, Enum):
 
 class ContractParty(TimestampModel, table=True):
     """Represents a party involved in a contract"""
-    id: UUID = Field(default=None, primary_key=True)
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
     # Add your implementation here
     contract_id: UUID = Field(foreign_key="contract.id", primary_key=True)
     party_type: ContractPartyType = ContractPartyType.INDIVIDUAL
@@ -132,7 +132,7 @@ class ContractVersion(TimestampModel, table=True):
     # - Add optional rendered_html field
     # - Add optional pdf_path field
     # - Create relationship back to Contract
-    id: UUID = Field(default=None, primary_key=True)
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
     # Contract reference
     contract_id: UUID = Field(foreign_key="contract.id", primary_key=True)
     version: int = Field(primary_key=True)  # Incremental version number

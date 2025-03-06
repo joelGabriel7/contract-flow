@@ -1,0 +1,17 @@
+{% for section in sections %}
+<div class="section">
+    <h2>{{ section.title }}</h2>
+    <div class="section-content">{{ section.text }}</div>
+    
+    {% if section.subsections %}
+    <div class="subsections">
+        {% for subsection in section.subsections %}
+        <div class="subsection">
+            <h3>{{ subsection.title }}</h3>
+            <div class="subsection-content">{{ subsection.text }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endfor %} 

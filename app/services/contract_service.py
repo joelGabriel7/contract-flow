@@ -1,15 +1,17 @@
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Any
+from typing import List, Optional, Dict, Any
 from sqlmodel import Session, select
 from uuid import UUID
 from app.models.contract import (
     Contract, ContractStatus, ContractVersion, ContractParty
 )
-from app.models.users import User
-from app.models.organization import Organization
+from app.models.organization import OrganizationUser
 from app.schemas.contract import ContractCreate, ContractUpdate, ContractVersionCreate
 from app.core.permission import ROLE_PERMISSIONS, Permission
-from app.models.organization import OrganizationUser
+from app.core.template_engine import render_template_string, create_jinja_env
+import logging
+
+logger = logging.getLogger(__name__)
 
 def create_contract(db: Session, user_id: UUID, contract_data: ContractCreate) -> Contract:
     """
@@ -79,7 +81,9 @@ def create_contract(db: Session, user_id: UUID, contract_data: ContractCreate) -
     db.commit()
     db.refresh(contract)
     
-
+    # Load relationships
+    db.refresh(contract, ['owner', 'organization'])
+    
     return contract
 
 
@@ -223,13 +227,13 @@ def get_user_contracts(
         base_conditions.append(Contract.organization_id == organization_id)
     
     # 1. Contracts owned by the user
-    owned_query = select(Contract).where(Contract.owner_id == user_id)
+    owned_query = select(Contract.id).where(Contract.owner_id == user_id)
     for condition in base_conditions:
         owned_query = owned_query.where(condition)
     
     # 2. Contracts where user is a party
     party_query = (
-        select(Contract)
+        select(Contract.id)
         .join(ContractParty, ContractParty.contract_id == Contract.id)
         .where(ContractParty.user_id == user_id)
     )
@@ -239,27 +243,163 @@ def get_user_contracts(
     # 3. Contracts from organizations with permission
     org_query = None
     if org_ids_with_permission:
-        org_query = select(Contract).where(Contract.organization_id.in_(org_ids_with_permission))
+        org_query = select(Contract.id).where(Contract.organization_id.in_(org_ids_with_permission))
         for condition in base_conditions:
             org_query = org_query.where(condition)
     
-    # Combine queries with UNION
-    final_query = owned_query.union(party_query)
+    # Combine queries with UNION to get unique contract IDs
+    contract_ids_query = owned_query.union(party_query)
     if org_query:
-        final_query = final_query.union(org_query)
+        contract_ids_query = contract_ids_query.union(org_query)
+    
+    # Get the contract IDs
+    contract_ids = [row[0] for row in db.exec(contract_ids_query).all()]
+    
+    # Now fetch the actual Contract objects
+    if not contract_ids:
+        return []
+    
+    # Create a query to fetch the contracts by ID
+    contracts_query = select(Contract).where(Contract.id.in_(contract_ids))
     
     # Apply sorting
-    sort_column = getattr(Contract, sort_by)
+    sort_column = getattr(Contract, sort_by, Contract.updated_at)
     if sort_desc:
-        final_query = final_query.order_by(sort_column.desc())
+        contracts_query = contracts_query.order_by(sort_column.desc())
     else:
-        final_query = final_query.order_by(sort_column)
+        contracts_query = contracts_query.order_by(sort_column)
     
     # Apply pagination
-    final_query = final_query.offset(skip).limit(limit)
+    contracts_query = contracts_query.offset(skip).limit(limit)
     
     # Execute query
-    contracts = db.exec(final_query).all()
+    contracts = db.exec(contracts_query).all()
     
     return contracts
  
+
+def render_contract_html(content: Dict[str, Any], contract: Contract) -> str:
+    """Render contract content as HTML."""
+    # Format party information
+    parties = []
+    for party in contract.parties:
+        if party.user_id:
+            parties.append({"name": f"{party.user.first_name} {party.user.last_name}"})
+        elif party.organization_id:
+            parties.append({"name": f"{party.organization.name}"})
+        else:
+            parties.append({"name": f"{party.external_name}"})
+    
+    # Render content sections
+    content_html = render_content_sections(content)
+    
+    # Create Jinja2 environment
+    env = create_jinja_env()
+    
+    # Load template
+    try:
+        template = env.get_template("contract.html")
+        
+        # Render template
+        html = template.render(
+            contract=contract,
+            parties=parties,
+            content_html=content_html
+        )
+    except Exception as e:
+        # Fallback to inline template if file not found
+        logger.warning(f"Contract template file not found, using fallback: {str(e)}")
+        
+        # Create template
+        template_str = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>{{ contract.title }}</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 40px; }
+                    .header { text-align: center; margin-bottom: 30px; }
+                    .title { font-size: 24px; font-weight: bold; }
+                    .parties { margin: 20px 0; }
+                    .content { margin: 20px 0; }
+                    .signatures { margin-top: 50px; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <div class="title">{{ contract.title }}</div>
+                    <div class="date">Effective Date: {{ contract.effective_date }}</div>
+                </div>
+                
+                <div class="parties">
+                    <h3>Parties to this Agreement:</h3>
+                    {% for party in parties %}
+                    <div class='party'>{{ party.name }}</div>
+                    {% endfor %}
+                </div>
+                
+                <div class="content">
+                    {{ content_html|safe }}
+                </div>
+            </body>
+            </html>
+        """
+        
+        # Render template
+        html = render_template_string(template_str, contract=contract, parties=parties, content_html=content_html)
+    
+    return html
+
+
+def render_content_sections(content: Dict[str, Any]) -> str:
+    """
+    Render content sections from the structured content.
+    
+    Args:
+        content: Structured contract content
+        
+    Returns:
+        HTML representation of content sections
+    """
+    # Get sections from content
+    sections = content.get("sections", [])
+    
+    # Create Jinja2 environment
+    env = create_jinja_env()
+    
+    # Load template
+    try:
+        template = env.get_template("contract_sections.html")
+        
+        # Render template
+        html = template.render(sections=sections)
+    except Exception as e:
+        # Fallback to inline template if file not found
+        logger.warning(f"Contract sections template file not found, using fallback: {str(e)}")
+        
+        # Create template for sections
+        section_template_str = """
+        {% for section in sections %}
+        <div class="section">
+            <h2>{{ section.title }}</h2>
+            <div class="section-content">{{ section.text }}</div>
+            
+            {% if section.subsections %}
+            <div class="subsections">
+                {% for subsection in section.subsections %}
+                <div class="subsection">
+                    <h3>{{ subsection.title }}</h3>
+                    <div class="subsection-content">{{ subsection.text }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+        """
+        
+        # Render template
+        html = render_template_string(section_template_str, sections=sections)
+    
+    return html

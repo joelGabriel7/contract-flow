@@ -5,7 +5,7 @@ from .core.database import engine
 from .api.auth import router as auth_router
 from .api.users import router as user_router
 from .api.organizations import router as org_router
-
+from .api.contract import router as contract_router
 app = FastAPI(
     title="ContractFlow API",
     description="API for ContractFlow contact management system",
@@ -37,8 +37,8 @@ async def health_check():
 
 app.include_router(auth_router, prefix='/api/auth', tags=['Authentication'])
 app.include_router(user_router, prefix='/api/users', tags=['Users'])
-app.include_router(org_router, prefix='/api/organizations',
-                   tags=['Admin Organizations'])
+app.include_router(org_router, prefix='/api/organizations', tags=['Admin Organizations'])
+app.include_router(contract_router, prefix='/api/contracts', tags=['Contracts'])
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,9 +1,16 @@
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING, Any
 from  uuid import UUID, uuid4
 from sqlmodel import SQLModel, Field, Relationship
 from .base import TimestampModel
 from .types import AccountType
+
+# Forward references for type hints
+if TYPE_CHECKING:
+    from .organization import Organization, OrganizationUser
+    from app.core.permission import Permission
+else:
+    from typing import TYPE_CHECKING
 
 class UserBase(SQLModel):
     email: str = Field(unique=True, index=True)
@@ -33,3 +40,14 @@ class User(UserBase, TimestampModel, table=True):
     @property
     def current_organization(self) -> Optional["Organization"]:
         return self.organizations[0].organization if self.organizations else None
+
+    def has_permission(self, permission: Any) -> bool:
+        """
+        Check if the user has a specific permission.
+        
+        For now, we'll implement a simple version where all users have all permissions.
+        In a real application, this would check against a user's roles and permissions.
+        """
+        # This is a simplified implementation
+        # In a real application, you would check against the user's roles
+        return True  # For now, all users have all permissions

@@ -1,7 +1,7 @@
 # app/schemas/contract.py
 from datetime import datetime
 from typing import Dict, List, Optional, Any
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, Field
 from uuid import UUID
 from app.models.contract import ContractStatus, ContractTemplateType, ContractPartyType
 
@@ -20,26 +20,31 @@ class ContractPartyBase(BaseModel):
     
     # - Add validator to ensure external_email is provided when party is external
     @field_validator('external_email')
-    def validate_external_email(cls, v,values):
+    def validate_external_email(cls, v, info):
        """Ensure external_email is provided when party is external"""
-       if values.get('party_type') in [ContractPartyType.INDIVIDUAL, ContractPartyType.REPRESENTATIVE] and not values.get('user_id') and not v:
+       party_type = info.data.get('party_type') if hasattr(info, 'data') else None
+       user_id = info.data.get('user_id') if hasattr(info, 'data') else None
+       if party_type in [ContractPartyType.INDIVIDUAL, ContractPartyType.REPRESENTATIVE] and not user_id and not v:
            raise ValueError('External email is required for external parties')
        return v
     
     # - Add validator to ensure external_name is provided when party is external
     
     @field_validator('external_name')
-    def validate_external_name(cls, v, values):
+    def validate_external_name(cls, v, info):
         """Ensure external_name is provided when party is external"""
-        if values.get('party_type') in [ContractPartyType.INDIVIDUAL, ContractPartyType.REPRESENTATIVE] and not values.get('user_id') and not v:
+        party_type = info.data.get('party_type') if hasattr(info, 'data') else None
+        user_id = info.data.get('user_id') if hasattr(info, 'data') else None
+        if party_type in [ContractPartyType.INDIVIDUAL, ContractPartyType.REPRESENTATIVE] and not user_id and not v:
             raise ValueError('External name is required for external parties')
         return v
     
     # - Add validator to ensure organization_id is provided for ORGANIZATION and REPRESENTATIVE types
     @field_validator('organization_id')
-    def validate_organization_id(cls, v, values):
+    def validate_organization_id(cls, v, info):
         """Ensure organization_id is provided for ORGANIZATION and REPRESENTATIVE types"""
-        if values.get('party_type') in [ContractPartyType.ORGANIZATION, ContractPartyType.REPRESENTATIVE] and not v:
+        party_type = info.data.get('party_type') if hasattr(info, 'data') else None
+        if party_type in [ContractPartyType.ORGANIZATION, ContractPartyType.REPRESENTATIVE] and not v:
             raise ValueError('Organization ID is required for organization and representative parties')
         return v
     
@@ -56,9 +61,10 @@ class ContractBase(BaseModel):
     # Requirements:
     # - Add validator to ensure expiration_date is after effective_date when both are provided
     @field_validator('expiration_date')
-    def validate_expiration_date(cls, v, values):
+    def validate_expiration_date(cls, v, info):
         """Ensure expiration_date is after effective_date when both are provided"""
-        if values.get('effective_date') and v and v <= values.get('effective_date'):
+        effective_date = info.data.get('effective_date') if hasattr(info, 'data') else None
+        if effective_date and v and v <= effective_date:
             raise ValueError('Expiration date must be after effective date')
         return v
 
@@ -141,14 +147,31 @@ class ContractRead(ContractBase):
     status: ContractStatus
     current_version: int
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
     last_activity: datetime
 
-    owner: Dict[str, Any]
-    organization: Dict[str, Any]
+    owner: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    organization: Optional[Dict[str, Any]] = Field(default_factory=dict)
     
     class Config:
         from_attributes = True
+        
+    @field_validator('owner', 'organization', mode='before')
+    def ensure_dict(cls, v):
+        """Ensure owner and organization are dictionaries"""
+        if v is None:
+            return {}
+        
+        # If it's a SQLModel/SQLAlchemy model, convert it to a dict
+        if hasattr(v, '__dict__'):
+            # Extract only the attributes we want to include
+            result = {}
+            for attr in ['id', 'email', 'full_name']:
+                if hasattr(v, attr):
+                    result[attr] = getattr(v, attr)
+            return result
+            
+        return v
      
 class ContractDetailRead(ContractRead):
     """Schema for reading a contract with detailed information"""
