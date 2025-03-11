@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from sqlmodel import Session, select
 from uuid import UUID
 from app.models.contract import (
@@ -10,6 +10,7 @@ from app.schemas.contract import ContractCreate, ContractUpdate, ContractVersion
 from app.core.permission import ROLE_PERMISSIONS, Permission
 from app.core.template_engine import render_template_string, create_jinja_env
 import logging
+from app.services.pdf_service import generate_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -153,33 +154,34 @@ def create_contract_version(
 
 
 def get_contract_with_current_content(
-    db: Session, contract_id:  UUID
-) -> Optional[Contract]:
-    """Get a contract with its current version content."""
+    db: Session, contract_id: UUID
+) -> Tuple[Optional[Contract], Optional[Dict[str, Any]]]:
+    """
+    Get a contract with its current version content.
+    
+    Returns:
+        Tuple of (contract, content)
+    """
     # Get contract
     contract = db.get(Contract, contract_id)
     
     if not contract:
-        return None
+        return None, None
     
     # Load relationships
     db.refresh(contract, ['parties', 'owner', 'organization'])
     
-    # [CHALLENGE 18] Get current version content
-    # Requirements:
-    # - Query ContractVersion for current version
+    # Get current version content
     version = db.exec(
         select(ContractVersion).where(
             ContractVersion.contract_id == contract_id, 
             ContractVersion.version == contract.current_version
         )
     ).first()
-    # - Add content to contract as 'current_content' attribute
-    if version:
-        setattr(contract, 'current_content', version.content)
-    else:
-        setattr(contract, 'current_content', {})
-    return contract
+    
+    content = version.content if version else {}
+        
+    return contract, content
 
 def get_user_contracts(
     db: Session, 
@@ -279,51 +281,110 @@ def get_user_contracts(
  
 
 def render_contract_html(content: Dict[str, Any], contract: Contract) -> str:
-    """Render contract content as HTML."""
-    # Format party information
-    parties = []
-    for party in contract.parties:
-        if party.user_id:
-            parties.append({"name": f"{party.user.first_name} {party.user.last_name}"})
-        elif party.organization_id:
-            parties.append({"name": f"{party.organization.name}"})
-        else:
-            parties.append({"name": f"{party.external_name}"})
+    """
+    Render contract content as HTML.
     
-    # Render content sections
-    content_html = render_content_sections(content)
-    
-    # Create Jinja2 environment
-    env = create_jinja_env()
-    
-    # Load template
+    Args:
+        content: Contract content
+        contract: Contract model
+        
+    Returns:
+        HTML representation of contract
+    """
     try:
-        template = env.get_template("contract.html")
+        # Format party information
+        parties = []
+        for party in contract.parties:
+            if party.user:
+                parties.append({"name": party.user.full_name if party.user.full_name else party.user.email})
+            elif party.organization:
+                parties.append({"name": party.organization.name})
+            else:
+                parties.append({"name": party.external_name if party.external_name else party.external_email})
         
-        # Render template
-        html = template.render(
-            contract=contract,
-            parties=parties,
-            content_html=content_html
-        )
-    except Exception as e:
-        # Fallback to inline template if file not found
-        logger.warning(f"Contract template file not found, using fallback: {str(e)}")
+        # Render content sections
+        content_html = render_content_sections(content.get("sections", []))
         
-        # Create template
-        template_str = """
+        # Create Jinja2 environment
+        env = create_jinja_env()
+        
+        # Load template
+        try:
+            template = env.get_template("contract.html")
+            
+            # Render template
+            html = template.render(
+                contract=contract,
+                parties=parties,
+                content_html=content_html
+            )
+        except Exception as e:
+            # Fallback to inline template if file not found
+            logger.warning(f"Contract template file not found, using fallback: {str(e)}")
+            
+            # Create template for contract
+            contract_template_str = """
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="utf-8">
                 <title>{{ contract.title }}</title>
                 <style>
-                    body { font-family: Arial, sans-serif; margin: 40px; }
-                    .header { text-align: center; margin-bottom: 30px; }
-                    .title { font-size: 24px; font-weight: bold; }
-                    .parties { margin: 20px 0; }
-                    .content { margin: 20px 0; }
-                    .signatures { margin-top: 50px; }
+                    body { 
+                        font-family: Arial, sans-serif; 
+                        margin: 40px;
+                        line-height: 1.5;
+                        color: #333;
+                    }
+                    .header { 
+                        text-align: center; 
+                        margin-bottom: 30px;
+                        border-bottom: 1px solid #eee;
+                        padding-bottom: 20px;
+                    }
+                    .title { 
+                        font-size: 24px; 
+                        font-weight: bold;
+                        margin-bottom: 10px;
+                    }
+                    .parties { 
+                        margin: 20px 0;
+                        padding: 15px;
+                        background-color: #f9f9f9;
+                        border-radius: 5px;
+                    }
+                    .party {
+                        margin: 5px 0;
+                        padding: 5px 0;
+                    }
+                    .content { 
+                        margin: 20px 0;
+                    }
+                    .section {
+                        margin-bottom: 20px;
+                    }
+                    .section h2 {
+                        border-bottom: 1px solid #eee;
+                        padding-bottom: 5px;
+                    }
+                    .subsection {
+                        margin-left: 20px;
+                        margin-bottom: 15px;
+                    }
+                    .subsection h3 {
+                        font-size: 16px;
+                    }
+                    .signatures { 
+                        margin-top: 50px;
+                        display: flex;
+                        justify-content: space-between;
+                    }
+                    .signature-block {
+                        width: 45%;
+                        border-top: 1px solid #000;
+                        padding-top: 5px;
+                        margin-top: 70px;
+                    }
                 </style>
             </head>
             <body>
@@ -342,64 +403,240 @@ def render_contract_html(content: Dict[str, Any], contract: Contract) -> str:
                 <div class="content">
                     {{ content_html|safe }}
                 </div>
+                
+                <div class="signatures">
+                    {% for party in parties %}
+                    <div class="signature-block">
+                        <div>{{ party.name }}</div>
+                        <div>Date: ________________</div>
+                    </div>
+                    {% endfor %}
+                </div>
             </body>
             </html>
-        """
+            """
+            
+            # Render template
+            html = render_template_string(
+                contract_template_str, 
+                contract=contract,
+                parties=parties,
+                content_html=content_html
+            )
         
-        # Render template
-        html = render_template_string(template_str, contract=contract, parties=parties, content_html=content_html)
-    
-    return html
+        return html
+    except Exception as e:
+        logger.error(f"Error rendering contract HTML: {str(e)}")
+        raise ValueError(f"Failed to render contract HTML: {str(e)}")
 
 
-def render_content_sections(content: Dict[str, Any]) -> str:
+def render_content_sections(sections: List[Dict[str, Any]]) -> str:
     """
-    Render content sections from the structured content.
+    Render contract content sections as HTML.
     
     Args:
-        content: Structured contract content
+        sections: List of content sections
         
     Returns:
         HTML representation of content sections
     """
-    # Get sections from content
-    sections = content.get("sections", [])
-    
-    # Create Jinja2 environment
-    env = create_jinja_env()
-    
-    # Load template
     try:
-        template = env.get_template("contract_sections.html")
+        # Create Jinja2 environment
+        env = create_jinja_env()
         
-        # Render template
-        html = template.render(sections=sections)
-    except Exception as e:
-        # Fallback to inline template if file not found
-        logger.warning(f"Contract sections template file not found, using fallback: {str(e)}")
-        
-        # Create template for sections
-        section_template_str = """
-        {% for section in sections %}
-        <div class="section">
-            <h2>{{ section.title }}</h2>
-            <div class="section-content">{{ section.text }}</div>
+        # Load template
+        try:
+            template = env.get_template("contract_sections.html")
             
-            {% if section.subsections %}
-            <div class="subsections">
-                {% for subsection in section.subsections %}
-                <div class="subsection">
-                    <h3>{{ subsection.title }}</h3>
-                    <div class="subsection-content">{{ subsection.text }}</div>
+            # Render template
+            html = template.render(sections=sections)
+        except Exception as e:
+            # Fallback to inline template if file not found
+            logger.warning(f"Contract sections template file not found, using fallback: {str(e)}")
+            
+            # Create template for sections
+            section_template_str = """
+            {% for section in sections %}
+            <div class="section">
+                <h2>{{ section.title }}</h2>
+                <div class="section-content">{{ section.text }}</div>
+                
+                {% if section.subsections %}
+                <div class="subsections">
+                    {% for subsection in section.subsections %}
+                    <div class="subsection">
+                        <h3>{{ subsection.title }}</h3>
+                        <div class="subsection-content">{{ subsection.text }}</div>
+                    </div>
+                    {% endfor %}
                 </div>
-                {% endfor %}
+                {% endif %}
             </div>
-            {% endif %}
-        </div>
-        {% endfor %}
-        """
+            {% endfor %}
+            """
+            
+            # Render template
+            html = render_template_string(section_template_str, sections=sections)
         
-        # Render template
-        html = render_template_string(section_template_str, sections=sections)
+        return html
+    except Exception as e:
+        logger.error(f"Error rendering content sections: {str(e)}")
+        return "<p>Error rendering content sections</p>"
+
+def generate_contract_pdf(content: Dict[str, Any], contract: Contract) -> str:
+    """
+    Generate PDF from contract content.
     
-    return html
+    Args:
+        content: Contract content
+        contract: Contract model
+        
+    Returns:
+        Path to generated PDF file
+    """
+    # First render the contract as HTML
+    html_content = render_contract_html(content, contract)
+    
+    # Generate PDF using the pdf_service
+    filename = f"contract_{contract.id}_{contract.current_version}.pdf"
+    output_path = f"storage/contracts/{contract.id}/{filename}"
+    
+    # Add custom CSS for contracts if needed
+    css_content = """
+    body {
+        font-family: Arial, sans-serif;
+        font-size: 12pt;
+        line-height: 1.5;
+        margin: 2cm;
+    }
+    h1 {
+        font-size: 18pt;
+        text-align: center;
+        margin-bottom: 2cm;
+    }
+    h2 {
+        font-size: 14pt;
+        margin-top: 1.5cm;
+        margin-bottom: 0.5cm;
+    }
+    .section {
+        margin-bottom: 1cm;
+    }
+    .section-content {
+        text-align: justify;
+    }
+    .footer {
+        position: fixed;
+        bottom: 0;
+        width: 100%;
+        text-align: center;
+        font-size: 9pt;
+        color: #666;
+    }
+    @page {
+        @bottom-center {
+            content: "Página " counter(page) " de " counter(pages);
+            font-size: 9pt;
+            color: #666;
+        }
+        @top-right {
+            content: "Contrato: " string(contract-title);
+            font-size: 9pt;
+            color: #666;
+        }
+    }
+    h1 {
+        string-set: contract-title content();
+    }
+    """
+    
+    # Add metadata for the PDF
+    metadata = {
+        'title': f"Contract: {contract.title}",
+        'subject': f"Contract ID: {contract.id}, Version: {contract.current_version}",
+        'keywords': f"contract, {contract.template_type}, {contract.status}",
+        'creator': 'Contract Management System',
+    }
+    
+    try:
+        # Generate PDF using the pdf_service
+        pdf_path = generate_pdf(
+            html_content=html_content,
+            output_path=output_path,
+            css_content=css_content,
+            metadata=metadata
+        )
+        
+        # Update the contract version with the PDF path
+        # This is optional but useful for future reference
+        if hasattr(contract, 'versions') and contract.versions:
+            current_version = next(
+                (v for v in contract.versions if v.version == contract.current_version),
+                None
+            )
+            if current_version:
+                current_version.pdf_path = pdf_path
+        
+        return pdf_path
+    except Exception as e:
+        logger.error(f"Error generating contract PDF: {str(e)}")
+        raise ValueError(f"Failed to generate contract PDF: {str(e)}")
+
+def contract_to_api_response(contract: Contract, content: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Convert a Contract model to an API response dictionary.
+    
+    Args:
+        contract: Contract model
+        content: Optional content to include
+        
+    Returns:
+        Dictionary suitable for API response
+    """
+    return {
+        "id": str(contract.id),
+        "title": contract.title,
+        "description": contract.description,
+        "template_type": contract.template_type.value,
+        "status": contract.status.value,
+        "effective_date": contract.effective_date.isoformat() if contract.effective_date else None,
+        "expiration_date": contract.expiration_date.isoformat() if contract.expiration_date else None,
+        "organization_id": str(contract.organization_id) if contract.organization_id else None,
+        "current_version": contract.current_version,
+        "created_at": contract.created_at.isoformat(),
+        "updated_at": contract.updated_at.isoformat() if contract.updated_at else None,
+        "last_activity": contract.last_activity.isoformat() if contract.last_activity else None,
+        "owner": {
+            "id": str(contract.owner.id),
+            "email": contract.owner.email,
+            "full_name": contract.owner.full_name if hasattr(contract.owner, "full_name") else None
+        },
+        "organization": {
+            "id": str(contract.organization.id),
+            "name": contract.organization.name
+        } if contract.organization else None,
+        "parties": [
+            {
+                "id": str(party.id),
+                "contract_id": str(party.contract_id),
+                "party_type": party.party_type.value,
+                "user_id": str(party.user_id) if party.user_id else None,
+                "organization_id": str(party.organization_id) if party.organization_id else None,
+                "external_name": party.external_name,
+                "external_email": party.external_email,
+                "signature_required": party.signature_required,
+                "signature_date": party.signature_date.isoformat() if party.signature_date else None,
+                "user": {
+                    "id": str(party.user.id),
+                    "email": party.user.email,
+                    "full_name": party.user.full_name if hasattr(party.user, "full_name") else None
+                } if party.user else None,
+                "organization": {
+                    "id": str(party.organization.id),
+                    "name": party.organization.name
+                } if party.organization else None
+            }
+            for party in contract.parties
+        ],
+        "current_content": content or {}
+    }

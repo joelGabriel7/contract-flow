@@ -69,8 +69,16 @@
     
     <div class="parties">
         <h3>Parties to this Agreement:</h3>
-        {% for party in parties %}
-        <div class='party'>{{ party.name }}</div>
+        {% for party in contract.parties %}
+        <div class='party'>
+            {% if party.user %}
+                {{ party.user.full_name if party.user.full_name else party.user.email }}
+            {% elif party.organization %}
+                {{ party.organization.name }}
+            {% else %}
+                {{ party.external_name if party.external_name else party.external_email }}
+            {% endif %}
+        </div>
         {% endfor %}
     </div>
     
@@ -79,9 +87,17 @@
     </div>
     
     <div class="signatures">
-        {% for party in parties %}
+        {% for party in contract.parties %}
         <div class="signature-block">
-            <div>{{ party.name }}</div>
+            <div>
+                {% if party.user %}
+                    {{ party.user.full_name if party.user.full_name else party.user.email }}
+                {% elif party.organization %}
+                    {{ party.organization.name }}
+                {% else %}
+                    {{ party.external_name if party.external_name else party.external_email }}
+                {% endif %}
+            </div>
             <div>Date: ________________</div>
         </div>
         {% endfor %}

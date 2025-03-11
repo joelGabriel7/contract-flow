@@ -4,17 +4,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 from fastapi.responses import HTMLResponse, FileResponse
 import logging
+import os
 
 from app.core.database import get_session
 from app.core.security import get_current_user
 from app.models.users import User, UUID
-from app.models.contract import Contract, ContractStatus
+from app.models.contract import Contract, ContractStatus, ContractVersion
 from app.models.organization import OrganizationUser
 from app.schemas.contract import (
     ContractCreate, ContractRead, ContractDetailRead, ContractUpdate
 )
 from app.services.contract_service import (
-    create_contract, update_contract, get_contract_with_current_content, get_user_contracts
+    create_contract, update_contract, get_contract_with_current_content, get_user_contracts, render_contract_html, generate_contract_pdf, contract_to_api_response
 )
 from app.core.permission import Permission
 
@@ -82,6 +83,241 @@ def get_contracts(
     )
     
     return contracts
+
+@router.get("/{contract_id}")
+def get_contract_details(
+    contract_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+):
+    """
+    Get detailed information about a specific contract, including its content.
+    """
+    # Check permission
+    if not current_user.has_permission(Permission.MANAGES_CONTRACT):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to view contract details"
+        )
+    
+    # Get contract with content
+    contract, content = get_contract_with_current_content(db, contract_id)
+    
+    if not contract:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contract not found"
+        )
+    
+    # Check if user has access to this contract
+    # 1. User is owner
+    if contract.owner_id == current_user.id:
+        pass  # User has access
+    # 2. User is a party to the contract
+    elif any(party.user_id == current_user.id for party in contract.parties):
+        pass  # User has access
+    # 3. User has organization permission
+    elif contract.organization_id:
+        org_user_query = select(OrganizationUser).where(
+            OrganizationUser.user_id == current_user.id,
+            OrganizationUser.organization_id == contract.organization_id
+        )
+        org_user = db.exec(org_user_query).first()
+        
+        if not (org_user and org_user.role in ["admin", "editor", "viewer"]):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this contract"
+            )
+    else:
+        # If we get here, user doesn't have access
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this contract"
+        )
+    
+    # Convert contract to API response
+    response = contract_to_api_response(contract, content)
+    
+    return response
+
+@router.get("/{contract_id}/html", response_class=HTMLResponse)
+def get_contract_html(
+    contract_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+):
+    """
+    Get contract rendered as HTML.
+    """
+    # Check permission
+    if not current_user.has_permission(Permission.MANAGES_CONTRACT):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to view contracts"
+        )
+    
+    # Get contract with content
+    contract, content = get_contract_with_current_content(db, contract_id)
+    
+    if not contract:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contract not found"
+        )
+    
+    # Check if user has access to this contract
+    # 1. User is owner
+    if contract.owner_id == current_user.id:
+        pass  # User has access
+    # 2. User is a party to the contract
+    elif any(party.user_id == current_user.id for party in contract.parties):
+        pass  # User has access
+    # 3. User has organization permission
+    elif contract.organization_id:
+        org_user_query = select(OrganizationUser).where(
+            OrganizationUser.user_id == current_user.id,
+            OrganizationUser.organization_id == contract.organization_id
+        )
+        org_user = db.exec(org_user_query).first()
+        
+        if not (org_user and org_user.role in ["admin", "editor", "viewer"]):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this contract"
+            )
+    else:
+        # If we get here, user doesn't have access
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this contract"
+        )
+    
+    # Render contract as HTML
+    try:
+        html = render_contract_html(content, contract)
+        return HTMLResponse(content=html)
+    except Exception as e:
+        logger.error(f"Error rendering contract HTML: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error rendering contract"
+        )
+
+@router.get("/{contract_id}/pdf", response_class=FileResponse)
+def get_contract_pdf(
+    contract_id: UUID,
+    download: bool = Query(False, description="Whether to download the file or view it in browser"),
+    watermark: Optional[str] = Query(None, description="Optional watermark text to add to the PDF"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
+):
+    """
+    Get contract as PDF.
+    
+    Args:
+        contract_id: ID of the contract
+        download: Whether to download the file or view it in browser
+        watermark: Optional watermark text to add to the PDF
+        
+    Returns:
+        PDF file
+    """
+    # Check permission
+    if not current_user.has_permission(Permission.MANAGES_CONTRACT):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to view contracts"
+        )
+    
+    # Get contract with content
+    contract, content = get_contract_with_current_content(db, contract_id)
+    
+    if not contract:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contract not found"
+        )
+    
+    # Check access (similar to other endpoints)
+    # 1. User is owner
+    if contract.owner_id == current_user.id:
+        pass  # User has access
+    # 2. User is a party to the contract
+    elif any(party.user_id == current_user.id for party in contract.parties):
+        pass  # User has access
+    # 3. User has organization permission
+    elif contract.organization_id:
+        org_user_query = select(OrganizationUser).where(
+            OrganizationUser.user_id == current_user.id,
+            OrganizationUser.organization_id == contract.organization_id
+        )
+        org_user = db.exec(org_user_query).first()
+        
+        if not (org_user and org_user.role in ["admin", "editor", "viewer"]):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this contract"
+            )
+    else:
+        # If we get here, user doesn't have access
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this contract"
+        )
+    
+    # Check if PDF already exists for this version
+    existing_pdf = None
+    if hasattr(contract, 'versions') and contract.versions:
+        current_version = next(
+            (v for v in contract.versions if v.version == contract.current_version),
+            None
+        )
+        if current_version and current_version.pdf_path and os.path.exists(current_version.pdf_path):
+            existing_pdf = current_version.pdf_path
+    
+    try:
+        # Use existing PDF if available and no watermark is requested, otherwise generate a new one
+        if existing_pdf and not watermark:
+            pdf_path = existing_pdf
+            logger.info(f"Using existing PDF for contract {contract_id}, version {contract.current_version}")
+        else:
+            # If watermark is requested, add it to the content
+            if watermark:
+                # Add watermark CSS
+                content['watermark'] = watermark
+            
+          
+            pdf_path = generate_contract_pdf(content, contract)
+            
+            # Update contract version with PDF path if no watermark
+            if not watermark and hasattr(contract, 'versions') and contract.versions:
+                current_version = next(
+                    (v for v in contract.versions if v.version == contract.current_version),
+                    None
+                )
+                if current_version:
+                    current_version.pdf_path = pdf_path
+                    db.add(current_version)
+                    db.commit()
+        
+        # Set filename for download
+        filename = f"{contract.title.replace(' ', '_')}_v{contract.current_version}.pdf"
+        if watermark:
+            filename = f"{filename.split('.')[0]}_{watermark.replace(' ', '_')}.pdf"
+        
+        # Return file response
+        return FileResponse(
+            path=pdf_path,
+            filename=filename if download else None,
+            media_type="application/pdf"
+        )
+    except Exception as e:
+        logger.error(f"Error generating contract PDF: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error generating contract PDF"
+        )
 
 """
 
