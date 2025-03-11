@@ -197,7 +197,9 @@ async def forgot_password(
 ):
     user = session.exec(select(User).where(User.email == email_verification.email)).first()
     if not user:
-        return {"message": "Not found account with that email"}
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Not found account with that email"
+        )
 
     reset_code = email_service.generate_verification_code()
     expires = datetime.utcnow() + timedelta(

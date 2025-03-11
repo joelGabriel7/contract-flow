@@ -2,7 +2,7 @@ from enum import Enum
 
 class AccountType(str, Enum):
     PERSONAL = 'personal'
-    BUSSINESS = 'bussiness'
+    BUSINESS = 'business'
 
 
 class OrganizationRole(str, Enum):

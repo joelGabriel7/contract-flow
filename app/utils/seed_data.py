@@ -32,7 +32,7 @@ def create_seed_data():
                email=f"business{i}@example.com",
                password_hash=get_password_hash("password123"),
                full_name=f"Business User {i}",
-               account_type=AccountType.BUSSINESS,
+               account_type=AccountType.BUSINESS,
                is_verified=True
            ) for i in range(1, 30)
        ]
