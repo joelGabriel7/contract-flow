@@ -3,9 +3,6 @@ import uuid
 from typing import Optional
 import logging
 
-# For PDF generation, we'll use WeasyPrint
-# You'll need to add this to requirements.txt
-# weasyprint==53.0
 from weasyprint import HTML, CSS
 
 logger = logging.getLogger(__name__)
@@ -17,9 +14,7 @@ def generate_pdf(
 ) -> str:
     """Generate a PDF from HTML content."""
     try:
-        # [CHALLENGE 25] Implement PDF generation
-        # Requirements:
-        # - Create output directory if needed
+        # Create output directory if needed
         if output_path:
             directory = os.path.dirname(output_path)
             os.makedirs(directory, exist_ok=True)
@@ -29,15 +24,21 @@ def generate_pdf(
             os.makedirs(directory, exist_ok=True)
             output_path = os.path.join(directory, filename)
 
-        # - Create WeasyPrint HTML object
+        # Create WeasyPrint HTML object
         html = HTML(string=html_content)
-        # - Apply CSS if provided
+        
+        # Apply CSS if provided
         stylesheet = []
         if css_content:
             stylesheet.append(CSS(string=css_content))
-        # - Write PDF to file
-        html.write_pdf(output_path, stylesheets=stylesheet)
-        # - Log success and return path
+            
+        # Add default metadata
+        html.write_pdf(
+            output_path, 
+            stylesheets=stylesheet,
+        )
+        
+        # Log success and return path
         logger.info(f"PDF generated successfully at {output_path}")
         return output_path
         

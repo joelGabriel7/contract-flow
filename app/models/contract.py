@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import List, Optional
-from sqlmodel import Field, Relationship,Column, JSON
+from sqlmodel import Field, Relationship, Column, JSON
 from uuid import UUID, uuid4
 
 from app.models.base import TimestampModel
@@ -21,12 +21,6 @@ class ContractStatus(str, Enum):
     TERMINATED = "terminated"
     REJECTED = "rejected"
 
-
-# [CHALLENGE 1] Complete ContractTemplateType enum
-# Requirements:
-# - Should have NDA, FREELANCE, COLLABORATION, and CUSTOM types
-# - Use string values that match the template system identifiers
-# - Include docstring explaining each type
 class ContractTemplateType(str, Enum):
     """
     Define possible contract template types
@@ -41,20 +35,7 @@ class ContractTemplateType(str, Enum):
 class Contract(TimestampModel, table=True):
     """Primary contract entity representing a legal agreement"""
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    # [CHALLENGE 2] Complete the Contract model fields
-    # Requirements:
-    # - Add description field (optional string)
-    # - Add template_type field (using ContractTemplateType enum)
-    # - Add status field with default value DRAFT
-    # - Add effective_date and expiration_date (both optional datetimes)
-    # - Add owner_id (foreign key to user.id) and owner relationship
-    # - Add organization_id (optional foreign key) and relationship
-    # - Add current_version field (integer with default 1)
-    # - Add last_activity fields for tracking the last change
-
-    # Relationships to other models will be added later
     # Basic contract information
-
     title: str
     description: Optional[str] = None
     template_type: ContractTemplateType = ContractTemplateType.CUSTOM
@@ -84,19 +65,7 @@ class ContractPartyType(str, Enum):
     INDIVIDUAL = "individual"  # Person signing in individual capacity
     ORGANIZATION = "organization"  # Organization as a party
     REPRESENTATIVE = "representative"  # Person signing on behalf of organization
-
-
-# [CHALLENGE 3] Implement ContractParty model
-# Requirements:
-# - Should inherit from BaseModel with table=True
-# - Include contract_id as foreign key to Contract
-# - Include party_type field using ContractPartyType enum
-# - Include optional user_id and user relationship
-# - Include optional organization_id and organization relationship
-# - Include optional external_name and external_email for external parties
-# - Include signature tracking fields (required, date, data)
-# - Create relationship back to Contract
-
+    
 class ContractParty(TimestampModel, table=True):
     """Represents a party involved in a contract"""
     id: UUID = Field(default_factory=uuid4, primary_key=True)
@@ -124,14 +93,6 @@ class ContractParty(TimestampModel, table=True):
 
 class ContractVersion(TimestampModel, table=True):
     """Represents a specific version of a contract document"""
-
-    # [CHALLENGE 4] Complete the ContractVersion model
-    # Requirements:
-    # - Add modified_by_id (foreign key to user.id) and relationship
-    # - Add optional change_summary field
-    # - Add optional rendered_html field
-    # - Add optional pdf_path field
-    # - Create relationship back to Contract
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     # Contract reference
     contract_id: UUID = Field(foreign_key="contract.id", primary_key=True)

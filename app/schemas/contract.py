@@ -176,8 +176,7 @@ class ContractRead(ContractBase):
 class ContractDetailRead(ContractRead):
     """Schema for reading a contract with detailed information"""
     parties: List[ContractPartyRead]
-    current_content: Dict[str, Any]
+    current_content: Dict[str, Any] = Field(default_factory=dict)
     
     class Config:
         from_attributes = True
-    
