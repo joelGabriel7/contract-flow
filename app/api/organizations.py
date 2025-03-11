@@ -84,11 +84,24 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlmodel import Session, select
 from uuid import UUID
-from typing import List, Optional
+from typing import List, Optional, Tuple
+from fastapi.responses import JSONResponse
 
 from ..core.permission import require_permission, Permission
 from ..core.security import get_current_user, get_session, get_current_user_with_org
-from ..schemas.organization import AdminDashboardResponse, OrganizationRead, DashboardMemberInfo, DashboardMetrics, RoleUpdate, OrganizationSettings, OrganizationSettingsUpdate, OrganizationDetailResponse
+from ..schemas.organization import (
+    AdminDashboardResponse, 
+    OrganizationRead, 
+    OrganizationDetailResponse, 
+    OrganizationSettings,
+    OrganizationSettingsUpdate,
+    SecuritySettings,
+    NotificationSettings,
+    StorageSettings,
+    RoleUpdate,
+    DashboardMemberInfo,
+    DashboardMetrics
+)
 from ..schemas.invitations import InvitationResponse, InvitationCreate
 from ..models.users import User
 from ..models.invitations import Invitation
@@ -102,47 +115,57 @@ from datetime import datetime, timedelta
 router = APIRouter()
 
 
-@router.get("/me", response_model=OrganizationDetailResponse)
-@require_permission(Permission.EDIT_ORGANIZATION)
+@router.get("/information")
 async def get_my_organization(
-    current_data: tuple[User, Optional[Organization]] = Depends(get_current_user_with_org)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session)
 ):
     """
-        Retrieve the current user's organization details.
-
-        This asynchronous function fetches the organization associated with the
-        current user. If no organization is found, it raises an HTTP 404 error.
-        Returns an `OrganizationDetailResponse` containing the organization's
-        basic information and settings.
-
-        Args:
-            current_data (tuple[User, Optional[Organization]]): A tuple containing
-            the current user and their associated organization, obtained via dependency
-            injection.
-
-        Returns:
-            OrganizationDetailResponse: The response model containing the organization's
-            details and settings.
-
-        Raises:
-            HTTPException: If no organization is found for the current user.
+    Retrieve the current user's organization details.
     """
-    user, organization = current_data
+    # Find the user's organization directly in the endpoint
+    if current_user.has_permission(Permission.EDIT_ORGANIZATION):
+        org_user = db.exec(
+            select(OrganizationUser).where(
+                OrganizationUser.user_id == current_user.id
+            )
+        ).first()
 
-    if not organization:
+        print(f"org_user: {org_user}")
+        if not org_user:
+            raise HTTPException(
+                status_code=404,
+                detail="No organization found for current user"
+            )
+
+        organization = db.get(Organization, org_user.organization_id)
+        print(f"organization: {organization}")
+        if not organization:
+            raise HTTPException(
+                status_code=404,
+                detail="Organization not found"
+            )
+        
+        # Crear respuesta JSON manualmente
+        response_data = {
+            "organization": {
+                "id": str(organization.id),
+                "name": organization.name,
+                "created_at": organization.created_at.isoformat()
+            },
+            "settings": organization.settings or {
+                "security": {},
+                "notifications": {},
+                "storage": {}
+            }
+        }
+        
+        return JSONResponse(content=response_data)
+    else:
         raise HTTPException(
-            status_code=404,
-            detail="No organization found for current user"
+            status_code=403,
+            detail="Insufficient permissions"
         )
-
-    return OrganizationDetailResponse(
-        organization=OrganizationRead(
-            id=organization.id,
-            name=organization.name,
-            created_at=organization.created_at
-        ),
-        settings=organization.settings
-    )
 
 @router.get("/{org_id}/dashboard", response_model=AdminDashboardResponse)
 @require_permission(Permission.EDIT_ORGANIZATION)
@@ -599,7 +622,6 @@ async def get_organization_settings(
         raise HTTPException(status_code=404, detail="Organization not found")
 
     settings = dict(organization.settings)
-    settings['storage']['used_gb'] = organization.storage_used / (1024 ** 3)
 
     return settings
 

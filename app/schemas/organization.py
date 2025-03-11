@@ -1,7 +1,7 @@
 from typing import Optional, List, Dict
 from datetime import datetime
 from uuid import UUID
-from sqlmodel import SQLModel
+from sqlmodel import SQLModel, Field
 from ..models.types import OrganizationRole
 
 
@@ -76,9 +76,9 @@ class StorageSettings(SQLModel):
 
 
 class OrganizationSettings(SQLModel):
-    security: SecuritySettings
-    notifications: NotificationSettings
-    storage: StorageSettings
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
+    notifications: NotificationSettings = Field(default_factory=NotificationSettings)
+    storage: StorageSettings = Field(default_factory=StorageSettings)
 
 
 class OrganizationSettingsUpdate(SQLModel):
